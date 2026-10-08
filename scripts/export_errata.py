@@ -4,18 +4,20 @@
 Generates crates/himotoki-load/src/errata_data.rs so the Rust loader applies
 the exact same corrections without hand-transcription drift.
 
-Usage: .venv/bin/python scripts/export_errata.py
+Usage: python scripts/export_errata.py
+    Needs the Python `himotoki` package importable (installed, or a checkout
+    named by HIMOTOKI_PY_ROOT).
 """
+import os
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+REPO = Path(__file__).resolve().parent.parent
+if os.environ.get("HIMOTOKI_PY_ROOT"):
+    sys.path.insert(0, os.environ["HIMOTOKI_PY_ROOT"])
 from himotoki.loading import errata  # noqa: E402
 
-OUT = (
-    Path(__file__).resolve().parent.parent
-    / "himotoki-rs/crates/himotoki-load/src/errata_data.rs"
-)
+OUT = REPO / "crates/himotoki-load/src/errata_data.rs"
 
 
 def lit(v):
