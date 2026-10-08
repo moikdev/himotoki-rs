@@ -251,6 +251,12 @@ fn build_archaic_cache(conn: &Connection) -> HashSet<i64> {
 }
 
 /// `is_arch` — all seqs archaic.
+/// Build the lazily-initialized archaic caches now.
+pub fn warm(conn: &Connection) {
+    arch_senses(conn);
+    ARCHAIC_CACHE.get_or_init(|| build_archaic_cache(conn));
+}
+
 pub fn is_arch(conn: &Connection, seq_set: &HashSet<i64>) -> bool {
     let cache = ARCHAIC_CACHE.get_or_init(|| build_archaic_cache(conn));
     seq_set.iter().all(|s| cache.contains(s))

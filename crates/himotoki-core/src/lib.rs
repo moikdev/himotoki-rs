@@ -57,6 +57,16 @@ impl std::fmt::Display for TextTooLongError {
 }
 impl std::error::Error for TextTooLongError {}
 
+/// `himotoki/__init__.py:warm_up` — build every lazily-initialized cache
+/// (suffix map, counter cache, archaic sets, grammar rule registries) so the
+/// first `analyze` call isn't cold.
+pub fn warm_up(conn: &rusqlite::Connection) {
+    grammar::suffixes::init_suffixes(conn, false);
+    let _ = grammar::counters::init_counter_cache(conn);
+    cache::warm(conn);
+    let _ = analyze(conn, "猫が好き", None, 1, None);
+}
+
 /// `himotoki/__init__.py:analyze` — NFC-normalize, length-check, segment, fill word infos.
 ///
 /// Returns `(word_infos, score)` tuples sorted by score descending.

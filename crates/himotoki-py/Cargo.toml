@@ -21,6 +21,7 @@ pythonize = "0.24"
 serde_json = { workspace = true }
 rusqlite = { workspace = true }
 anyhow = { workspace = true }
+mimalloc = { version = "0.1", default-features = false }
 
 [package.metadata.maturin]
 name = "himotoki_rs"
