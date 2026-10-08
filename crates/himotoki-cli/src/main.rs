@@ -196,10 +196,12 @@ fn main() -> anyhow::Result<()> {
             }
             if cli.json {
                 let limit = if cli.limit > 0 { cli.limit as usize } else { 5 };
-                let output = segment_to_json(&conn, &text, limit);
+                let output = segment_to_json(&conn, &text, index.as_ref(), limit);
                 println!("{}", serde_json::to_string(&output)?);
             } else if cli.romanize {
-                let word_infos = simple_segment(&conn, &text, 5);
+                // Text modes take the single best path with limit=1, like
+                // Python's output_romanize/output_kana/output_full/output_default.
+                let word_infos = simple_segment(&conn, &text, index.as_ref(), 1);
                 if word_infos.is_empty() {
                     println!("{}", text);
                 } else {
@@ -210,7 +212,7 @@ fn main() -> anyhow::Result<()> {
                     println!("{}", parts.join(" "));
                 }
             } else if cli.kana {
-                let word_infos = simple_segment(&conn, &text, 5);
+                let word_infos = simple_segment(&conn, &text, index.as_ref(), 1);
                 if word_infos.is_empty() {
                     println!("{}", text);
                 } else {
@@ -220,7 +222,7 @@ fn main() -> anyhow::Result<()> {
                 }
             } else if cli.full {
                 // Python `output_full`: dict_segment + format_word_info_text(romanization)
-                let word_infos = simple_segment(&conn, &text, 5);
+                let word_infos = simple_segment(&conn, &text, index.as_ref(), 1);
                 if word_infos.is_empty() {
                     println!("{}", text);
                 } else {
@@ -229,7 +231,7 @@ fn main() -> anyhow::Result<()> {
                 }
             } else {
                 // default: format_word_info_text(include_romanization=False)
-                let word_infos = simple_segment(&conn, &text, 5);
+                let word_infos = simple_segment(&conn, &text, index.as_ref(), 1);
                 if word_infos.is_empty() {
                     println!("{}", text);
                 } else {
@@ -346,7 +348,7 @@ fn dump(
             writeln!(f, "{}", golden::paths_line(conn, index, i, text))?;
         }
         if let Some(f) = out_file.as_mut() {
-            writeln!(f, "{}", golden::output_line(conn, i, text))?;
+            writeln!(f, "{}", golden::output_line(conn, index, i, text))?;
         }
 
         n += 1;

@@ -231,7 +231,7 @@ pub static PUNCTUATION_MAP: &[(&str, &str)] = &[
 //                     (・U+30FB excluded deliberately)
 //   KATAKANA_UNIQ     [ァ-ヺヽヾ]    = U+30A1..=U+30FA | U+30FD..=U+30FE
 //   HIRAGANA_PATTERN  [ぁ-ゔゝゞー]  = U+3041..=U+3094 | U+309D | U+309E | U+30FC
-//   KANJI_PATTERN     [々ヶ〆一-龯] = U+3005 | U+30F6 | U+3030 | U+4E00..=U+9FAF
+//   KANJI_PATTERN     [々ヶ〆一-龯] = U+3005 | U+30F6 | U+3006 | U+4E00..=U+9FAF
 //   KANJI_CHAR        [一-龯]       = U+4E00..=U+9FAF
 //   WORD              kanji|katakana|hiragana|〇 (U+3007)
 //   NUM_WORD          WORD | 0-9 | ０-９ (〇 already in WORD)
@@ -256,7 +256,7 @@ pub fn is_hiragana_char(c: char) -> bool {
 pub fn is_kanji_char(c: char) -> bool {
     matches!(
         c,
-        '\u{3005}' | '\u{30F6}' | '\u{3030}' | '\u{4E00}'..='\u{9FAF}'
+        '\u{3005}' | '\u{30F6}' | '\u{3006}' | '\u{4E00}'..='\u{9FAF}'
     )
 }
 

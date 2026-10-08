@@ -228,6 +228,7 @@ pub fn find_substring_words(
     let mut kana_keys: Vec<String> = Vec::new();
     let mut kanji_keys: Vec<String> = Vec::new();
     let mut all_substrings: Vec<String> = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
 
     let prof = std::env::var("HIMOTOKI_PROFILE").is_ok();
     let t0 = std::time::Instant::now();
@@ -243,7 +244,11 @@ pub fn find_substring_words(
                 continue;
             }
             let part: String = chars[start..end].iter().collect();
-            if substring_map.contains_key(&part) {
+            // Dedupe on every substring, not just index hits: a repeated
+            // non-dictionary substring (e.g. やで twice) would otherwise run
+            // the suffix pass twice and emit duplicate compound segments,
+            // making indexed and unindexed segmentation disagree.
+            if !seen.insert(part.clone()) {
                 continue;
             }
             all_substrings.push(part.clone());
