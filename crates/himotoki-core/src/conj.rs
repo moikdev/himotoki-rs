@@ -21,7 +21,7 @@ fn cache_get(key: &CacheKey) -> Option<Vec<ConjData>> {
 }
 fn cache_put(key: CacheKey, val: Vec<ConjData>) {
     let mut guard = CONJ_DATA_CACHE.write().unwrap();
-    guard.get_or_insert_with(HashMap::new).insert(key, val);
+    crate::cache::bounded(guard.get_or_insert_with(HashMap::new)).insert(key, val);
 }
 
 /// `clear_scoring_caches` counterpart — drop the conj-data cache.

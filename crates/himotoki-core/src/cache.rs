@@ -1,7 +1,8 @@
 //! Scoring caches — port of `himotoki/scoring/caches.py`.
 //!
 //! Python uses LRUCache instances; eviction is purely a memory bound and never
-//! changes results, so plain `RwLock<HashMap>` statics are parity-equivalent.
+//! changes results, so plain `RwLock<HashMap>` statics are parity-equivalent;
+//! caches keyed by input-derived data are capped (see `bounded`).
 //!
 //! Caches (module-level):
 //!   CONJ_DATA — in conj.rs (co-located with get_conj_data)
@@ -26,6 +27,19 @@ static WORD_CACHE: RwLock<Option<HashMap<(String, String, bool), Vec<WordMatch>>
     RwLock::new(None);
 static ENTRY_CACHE: RwLock<Option<HashMap<i64, EntryRow>>> = RwLock::new(None);
 static ARCHAIC_CACHE: OnceLock<HashSet<i64>> = OnceLock::new();
+
+/// Entry cap for caches keyed by input-derived data (arbitrary substrings,
+/// seq combinations), which would otherwise grow without bound in a
+/// long-running process. Caches are pure memoization, so clearing on
+/// overflow never changes results.
+pub(crate) const INPUT_KEYED_CACHE_MAX: usize = 200_000;
+
+pub(crate) fn bounded<K, V>(m: &mut HashMap<K, V>) -> &mut HashMap<K, V> {
+    if m.len() >= INPUT_KEYED_CACHE_MAX {
+        m.clear();
+    }
+    m
+}
 /// sense ids tagged arch/obsc/rare — loaded once instead of re-materializing
 /// the `NOT IN (SELECT ...)` subquery on every POS lookup.
 static ARCH_SENSES: OnceLock<HashSet<i64>> = OnceLock::new();
@@ -165,7 +179,7 @@ pub fn preload_scoring_caches(conn: &Connection, seqs: &HashSet<i64>) {
             }
         }
         let mut guard = UK_CACHE.write().unwrap();
-        let m = guard.get_or_insert_with(HashMap::new);
+        let m = bounded(guard.get_or_insert_with(HashMap::new));
         for seq in &uk_missing {
             m.insert(vec![*seq], uk_seqs.contains(seq));
         }
@@ -286,11 +300,7 @@ pub fn is_prefer_kana(conn: &Connection, seq_set: &[i64]) -> bool {
         .prepare_cached(&sql)
         .and_then(|mut s| s.query_row(rusqlite::params_from_iter(params), |_| Ok(())))
         .is_ok();
-    UK_CACHE
-        .write()
-        .unwrap()
-        .get_or_insert_with(HashMap::new)
-        .insert(key, result);
+    bounded(UK_CACHE.write().unwrap().get_or_insert_with(HashMap::new)).insert(key, result);
     result
 }
 
@@ -356,10 +366,7 @@ pub fn word_cache_get(db_id: &str, word: &str, root_only: bool) -> Option<Vec<Wo
 }
 
 pub fn word_cache_put(db_id: &str, word: &str, root_only: bool, matches: Vec<WordMatch>) {
-    WORD_CACHE
-        .write()
-        .unwrap()
-        .get_or_insert_with(HashMap::new)
+    bounded(WORD_CACHE.write().unwrap().get_or_insert_with(HashMap::new))
         .insert((db_id.to_string(), word.to_string(), root_only), matches);
 }
 
@@ -446,4 +453,16 @@ impl ReadingsCache {
 #[derive(Default)]
 pub struct GenScoreCache {
     pub map: HashMap<Option<i64>, f64>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bounded_clears_at_capacity() {
+        let mut m: HashMap<usize, ()> = (0..INPUT_KEYED_CACHE_MAX).map(|i| (i, ())).collect();
+        bounded(&mut m).insert(usize::MAX, ());
+        assert_eq!(m.len(), 1);
+    }
 }

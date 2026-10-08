@@ -170,21 +170,14 @@ fn main() -> anyhow::Result<()> {
                 total / (texts.len() * rounds) as f64
             );
             if let Some(out) = json_out {
-                let peak_rss_kb = std::fs::read_to_string("/proc/self/status")
-                    .ok()
-                    .and_then(|s| {
-                        s.lines()
-                            .find(|l| l.starts_with("VmHWM"))
-                            .and_then(|l| l.split_whitespace().nth(1)?.parse::<u64>().ok())
-                    })
-                    .unwrap_or(0);
+                let peak_rss_mb = peak_rss_mb();
                 let js = serde_json::json!({
                     "impl": "rust",
                     "inputs": texts.len(),
                     "rounds": rounds,
                     "segments": nsegs,
                     "per_input_ms": round_times,
-                    "peak_rss_mb": peak_rss_kb as f64 / 1024.0,
+                    "peak_rss_mb": peak_rss_mb,
                 });
                 std::fs::write(out, serde_json::to_string(&js)?)?;
             }
@@ -251,6 +244,20 @@ fn main() -> anyhow::Result<()> {
         }
     }
     Ok(())
+}
+
+/// Peak resident set size in MiB (getrusage: KiB on Linux, bytes on macOS).
+fn peak_rss_mb() -> f64 {
+    let mut ru: libc::rusage = unsafe { std::mem::zeroed() };
+    if unsafe { libc::getrusage(libc::RUSAGE_SELF, &mut ru) } != 0 {
+        return 0.0;
+    }
+    let raw = ru.ru_maxrss as f64;
+    if cfg!(target_os = "macos") {
+        raw / (1024.0 * 1024.0)
+    } else {
+        raw / 1024.0
+    }
 }
 
 /// `format_word_info_text` — like segment_to_text body on given word_infos.
