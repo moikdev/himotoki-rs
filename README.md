@@ -49,9 +49,10 @@ The database is looked up from `-d`, then `HIMOTOKI_DB_PATH`, then
 `~/.himotoki/himotoki.db`. It is opened read-only and, unless a non-empty
 `-wal` file holds uncheckpointed changes, immutable (no locking, works on
 read-only filesystems), so don't rebuild it in place while a process is
-using it. A word index (`himotoki.fst`) is built on first use (~5 s) and
-cached next to the database, or in the temp directory (keyed by the
-database's path, size and mtime) if that directory is read-only.
+using it. A word index (`himotoki.db.fst`) is built on first use (~5 s)
+and cached next to the database, or in the temp directory if that directory
+is read-only; each cache file records the database path, size and mtime it
+was built from, and is not used while a `-wal` file holds pending changes.
 
 ## Usage
 

@@ -56,14 +56,14 @@ pub fn open(path: &std::path::Path) -> rusqlite::Result<Connection> {
             Some(format!("database not found: {}", path.display())),
         ));
     }
-    let abs = std::path::absolute(path).map_err(|e| {
+    let real = resolve(path).map_err(|e| {
         rusqlite::Error::SqliteFailure(
             rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_CANTOPEN),
             Some(format!("cannot resolve {}: {e}", path.display())),
         )
     })?;
     let conn = Connection::open_with_flags(
-        sqlite_uri(&abs, !has_pending_wal(&abs)),
+        sqlite_uri(&real, !has_pending_wal(&real)),
         OpenFlags::SQLITE_OPEN_READ_ONLY
             | OpenFlags::SQLITE_OPEN_URI
             | OpenFlags::SQLITE_OPEN_NO_MUTEX,
@@ -74,8 +74,26 @@ pub fn open(path: &std::path::Path) -> rusqlite::Result<Connection> {
     Ok(conn)
 }
 
-/// A non-empty `<db>-wal` may hold commits not yet in the main file.
-fn has_pending_wal(db: &std::path::Path) -> bool {
+/// The database's real location: absolute, with symlinks resolved, so the
+/// `-wal` file checked (and opened by SQLite) is the target's, not an alias's.
+/// On Windows the `\\?\` verbatim prefix `canonicalize` adds is removed.
+pub(crate) fn resolve(path: &std::path::Path) -> std::io::Result<PathBuf> {
+    let canon = std::fs::canonicalize(path)?;
+    if cfg!(windows) {
+        let s = canon.to_string_lossy();
+        if let Some(rest) = s.strip_prefix(r"\\?\UNC\") {
+            return Ok(PathBuf::from(format!(r"\\{rest}")));
+        }
+        if let Some(rest) = s.strip_prefix(r"\\?\") {
+            return Ok(PathBuf::from(rest));
+        }
+    }
+    Ok(canon)
+}
+
+/// A non-empty `<db>-wal` may hold commits not yet in the main file. `db`
+/// must already be resolved (see [`resolve`]).
+pub(crate) fn has_pending_wal(db: &std::path::Path) -> bool {
     let mut wal = db.as_os_str().to_owned();
     wal.push("-wal");
     std::fs::metadata(wal).map(|m| m.len() > 0).unwrap_or(false)
@@ -216,6 +234,29 @@ mod tests {
         .unwrap();
         // `w` stays open, so the commit lives only in wal.db-wal.
         let c = open(&p).unwrap();
+        let n: i64 = c
+            .query_row("SELECT count(*) FROM entry", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(n, 1);
+        drop(w);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn sees_uncheckpointed_wal_commits_through_symlink() {
+        let d = scratch("walsym");
+        let p = d.join("real.db");
+        let alias = d.join("alias.db");
+        let _ = std::fs::remove_file(&p);
+        let _ = std::fs::remove_file(&alias);
+        let w = Connection::open(&p).unwrap();
+        w.execute_batch(
+            "PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0;
+             CREATE TABLE entry(seq INTEGER); INSERT INTO entry VALUES (7);",
+        )
+        .unwrap();
+        std::os::unix::fs::symlink(&p, &alias).unwrap();
+        let c = open(&alias).unwrap();
         let n: i64 = c
             .query_row("SELECT count(*) FROM entry", [], |r| r.get(0))
             .unwrap();
