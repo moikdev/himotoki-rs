@@ -491,10 +491,9 @@ pub fn counter_join(
                     result_counter = counter_rendaku(&result_counter, true);
                 }
             }
-            1000 | 10000
-                if head == Some("ha") => {
-                    result_counter = counter_rendaku(&result_counter, true);
-                }
+            1000 | 10000 if head == Some("ha") => {
+                result_counter = counter_rendaku(&result_counter, true);
+            }
             _ => {}
         }
     }

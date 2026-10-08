@@ -465,17 +465,10 @@ fn init_synergies(r: &mut super::synergies::Registries) {
     // し (particle) + ただ
     {
         let (fl, fr) = (filter_in_seq_set(&[2086640]), filter_in_seq_set(&[1538900]));
-        r.synergies.push(Arc::new(move |l: &SegmentList, rr: &SegmentList| {
-            make_syn(
-                l,
-                rr,
-                fl.clone(),
-                fr.clone(),
-                "shi+tada",
-                " ",
-                10.0,
-            )
-        }));
+        r.synergies
+            .push(Arc::new(move |l: &SegmentList, rr: &SegmentList| {
+                make_syn(l, rr, fl.clone(), fr.clone(), "shi+tada", " ", 10.0)
+            }));
     }
 
     // verb + よ (unconjugated only)
@@ -506,50 +499,35 @@ fn init_synergies(r: &mut super::synergies::Registries) {
 
     // 前(まえ) + に
     {
-        let (fl, fr) = (filter_in_seq_set(&[SEQ_MAE_NOUN]), filter_in_seq_set(&[SEQ_NI]));
-        r.synergies.push(Arc::new(move |l: &SegmentList, rr: &SegmentList| {
-            make_syn(
-                l,
-                rr,
-                fl.clone(),
-                fr.clone(),
-                "mae+ni",
-                " ",
-                25.0,
-            )
-        }));
+        let (fl, fr) = (
+            filter_in_seq_set(&[SEQ_MAE_NOUN]),
+            filter_in_seq_set(&[SEQ_NI]),
+        );
+        r.synergies
+            .push(Arc::new(move |l: &SegmentList, rr: &SegmentList| {
+                make_syn(l, rr, fl.clone(), fr.clone(), "mae+ni", " ", 25.0)
+            }));
     }
 
     // の + 方(ほう)
     {
-        let (fl, fr) = (filter_in_seq_set(&[SEQ_NO]), filter_in_seq_set(&[SEQ_HOU_NOUN]));
-        r.synergies.push(Arc::new(move |l: &SegmentList, rr: &SegmentList| {
-            make_syn(
-                l,
-                rr,
-                fl.clone(),
-                fr.clone(),
-                "no+hou",
-                " ",
-                25.0,
-            )
-        }));
+        let (fl, fr) = (
+            filter_in_seq_set(&[SEQ_NO]),
+            filter_in_seq_set(&[SEQ_HOU_NOUN]),
+        );
+        r.synergies
+            .push(Arc::new(move |l: &SegmentList, rr: &SegmentList| {
+                make_syn(l, rr, fl.clone(), fr.clone(), "no+hou", " ", 25.0)
+            }));
     }
 
     // noun + 面(めん)
     {
         let (fl, fr) = (filter_is_noun(), filter_in_seq_set(&[SEQ_MEN_NOUN]));
-        r.synergies.push(Arc::new(move |l: &SegmentList, rr: &SegmentList| {
-            make_syn(
-                l,
-                rr,
-                fl.clone(),
-                fr.clone(),
-                "noun+men",
-                " ",
-                25.0,
-            )
-        }));
+        r.synergies
+            .push(Arc::new(move |l: &SegmentList, rr: &SegmentList| {
+                make_syn(l, rr, fl.clone(), fr.clone(), "noun+men", " ", 25.0)
+            }));
     }
 
     // verb/adj + 人(ひと)
@@ -572,18 +550,14 @@ fn init_synergies(r: &mut super::synergies::Registries) {
 
     // 人(ひと) + の
     {
-        let (fl, fr) = (filter_in_seq_set(&[SEQ_HITO_NOUN]), filter_in_seq_set(&[SEQ_NO]));
-        r.synergies.push(Arc::new(move |l: &SegmentList, rr: &SegmentList| {
-            make_syn(
-                l,
-                rr,
-                fl.clone(),
-                fr.clone(),
-                "hito+no",
-                " ",
-                30.0,
-            )
-        }));
+        let (fl, fr) = (
+            filter_in_seq_set(&[SEQ_HITO_NOUN]),
+            filter_in_seq_set(&[SEQ_NO]),
+        );
+        r.synergies
+            .push(Arc::new(move |l: &SegmentList, rr: &SegmentList| {
+                make_syn(l, rr, fl.clone(), fr.clone(), "hito+no", " ", 30.0)
+            }));
     }
 
     // verb + 中(なか)
@@ -610,34 +584,26 @@ fn init_synergies(r: &mut super::synergies::Registries) {
 
     // が + 止まる(とまる)
     {
-        let (fl, fr) = (filter_in_seq_set(&[SEQ_GA]), filter_in_seq_set(&[SEQ_TOMARU]));
-        r.synergies.push(Arc::new(move |l: &SegmentList, rr: &SegmentList| {
-            make_syn(
-                l,
-                rr,
-                fl.clone(),
-                fr.clone(),
-                "ga+tomaru",
-                " ",
-                25.0,
-            )
-        }));
+        let (fl, fr) = (
+            filter_in_seq_set(&[SEQ_GA]),
+            filter_in_seq_set(&[SEQ_TOMARU]),
+        );
+        r.synergies
+            .push(Arc::new(move |l: &SegmentList, rr: &SegmentList| {
+                make_syn(l, rr, fl.clone(), fr.clone(), "ga+tomaru", " ", 25.0)
+            }));
     }
 
     // は + 辛い(つらい)
     {
-        let (fl, fr) = (filter_in_seq_set(&[SEQ_WA]), filter_in_seq_set(&[SEQ_TSURAI]));
-        r.synergies.push(Arc::new(move |l: &SegmentList, rr: &SegmentList| {
-            make_syn(
-                l,
-                rr,
-                fl.clone(),
-                fr.clone(),
-                "wa+tsurai",
-                " ",
-                50.0,
-            )
-        }));
+        let (fl, fr) = (
+            filter_in_seq_set(&[SEQ_WA]),
+            filter_in_seq_set(&[SEQ_TSURAI]),
+        );
+        r.synergies
+            .push(Arc::new(move |l: &SegmentList, rr: &SegmentList| {
+                make_syn(l, rr, fl.clone(), fr.clone(), "wa+tsurai", " ", 50.0)
+            }));
     }
 }
 
@@ -893,8 +859,8 @@ fn init_segfilters(r: &mut super::synergies::Registries) {
 
     // だ + する (dashi) — custom
     let f_right = filter_in_seq_set(&[1157170, 2424740, 1305070]);
-    r.segfilters.push(
-        Arc::new(move |seg_left: Option<&SegmentList>, seg_right: &SegmentList| {
+    r.segfilters.push(Arc::new(
+        move |seg_left: Option<&SegmentList>, seg_right: &SegmentList| {
             let satisfies_r: Vec<Rc<Segment>> = seg_right
                 .segments
                 .iter()
@@ -925,8 +891,8 @@ fn init_segfilters(r: &mut super::synergies::Registries) {
                 return vec![(Some(left.clone()), mk_list(contradicts_r, seg_right))];
             }
             Vec::new()
-        }) as SegfilterFn,
-    );
+        },
+    ) as SegfilterFn);
 
     // Honorifics must follow non-particles
     {
@@ -942,8 +908,8 @@ fn init_segfilters(r: &mut super::synergies::Registries) {
     // くん before a particle → pronoun reading, remove くん
     let f_part = filter_in_seq_set(&NOUN_PARTICLES.iter().copied().collect::<Vec<i64>>());
     let f_kun = filter_in_seq_set(&[SEQ_KUN]);
-    r.segfilters.push(
-        Arc::new(move |seg_left: Option<&SegmentList>, seg_right: &SegmentList| {
+    r.segfilters.push(Arc::new(
+        move |seg_left: Option<&SegmentList>, seg_right: &SegmentList| {
             let left = match seg_left {
                 Some(l) if l.end == seg_right.start => l,
                 _ => return vec![(seg_left.cloned(), seg_right.clone())],
@@ -961,8 +927,8 @@ fn init_segfilters(r: &mut super::synergies::Registries) {
                 return Vec::new();
             }
             vec![(Some(mk_list(left_wo, left)), seg_right.clone())]
-        }) as SegfilterFn,
-    );
+        },
+    ) as SegfilterFn);
 
     // に + つけ blocked (prefer につけ)
     {
@@ -1011,8 +977,8 @@ fn init_segfilters(r: &mut super::synergies::Registries) {
     // Remove いくさ reading of 戦 after nouns
     let f_noun = filter_is_noun();
     let f_ikusa = filter_in_seq_set(&[SEQ_IKUSA_NOUN]);
-    r.segfilters.push(
-        Arc::new(move |seg_left: Option<&SegmentList>, seg_right: &SegmentList| {
+    r.segfilters.push(Arc::new(
+        move |seg_left: Option<&SegmentList>, seg_right: &SegmentList| {
             let left = match seg_left {
                 Some(l) if l.end == seg_right.start => l,
                 _ => return vec![(seg_left.cloned(), seg_right.clone())],
@@ -1033,8 +999,8 @@ fn init_segfilters(r: &mut super::synergies::Registries) {
                 return vec![(Some(left.clone()), seg_right.clone())];
             }
             vec![(Some(left.clone()), mk_list(right_wo, seg_right))]
-        }) as SegfilterFn,
-    );
+        },
+    ) as SegfilterFn);
 
     // Block ないよう matched from kana (内容/内用/内洋)
     r.segfilters.push(

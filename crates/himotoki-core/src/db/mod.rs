@@ -140,7 +140,9 @@ mod tests {
         perm.set_readonly(true);
         std::fs::set_permissions(&p, perm).unwrap();
         let c = open(&p).unwrap();
-        let n: i64 = c.query_row("SELECT seq FROM entry", [], |r| r.get(0)).unwrap();
+        let n: i64 = c
+            .query_row("SELECT seq FROM entry", [], |r| r.get(0))
+            .unwrap();
         assert_eq!(n, 7);
         let mut perm = std::fs::metadata(&p).unwrap().permissions();
         #[allow(clippy::permissions_set_readonly_false)]
@@ -153,7 +155,9 @@ mod tests {
         let d = scratch("uri");
         let p = tiny_db(&d, "a?b#c%d.db");
         let c = open(&p).unwrap();
-        let n: i64 = c.query_row("SELECT seq FROM entry", [], |r| r.get(0)).unwrap();
+        let n: i64 = c
+            .query_row("SELECT seq FROM entry", [], |r| r.get(0))
+            .unwrap();
         assert_eq!(n, 7);
     }
 

@@ -136,7 +136,12 @@ pub fn word_info_gloss_json(conn: &Connection, word_info: &WordInfo, root_only: 
 }
 
 /// `dict_segment` — segment + WordInfo fill, returns [(word_infos, score)].
-pub fn dict_segment(conn: &Connection, text: &str, index: Option<&crate::index::WordIndex>, limit: usize) -> Vec<(Vec<WordInfo>, f64)> {
+pub fn dict_segment(
+    conn: &Connection,
+    text: &str,
+    index: Option<&crate::index::WordIndex>,
+    limit: usize,
+) -> Vec<(Vec<WordInfo>, f64)> {
     let results = crate::segment::segment_text(conn, text, index, limit);
     results
         .into_iter()
@@ -145,7 +150,12 @@ pub fn dict_segment(conn: &Connection, text: &str, index: Option<&crate::index::
 }
 
 /// `simple_segment` — best-path WordInfos.
-pub fn simple_segment(conn: &Connection, text: &str, index: Option<&crate::index::WordIndex>, limit: usize) -> Vec<WordInfo> {
+pub fn simple_segment(
+    conn: &Connection,
+    text: &str,
+    index: Option<&crate::index::WordIndex>,
+    limit: usize,
+) -> Vec<WordInfo> {
     dict_segment(conn, text, index, limit)
         .into_iter()
         .next()
@@ -154,7 +164,12 @@ pub fn simple_segment(conn: &Connection, text: &str, index: Option<&crate::index
 }
 
 /// `segment_to_json` — [[segments, score]] ichiran-compatible.
-pub fn segment_to_json(conn: &Connection, text: &str, index: Option<&crate::index::WordIndex>, limit: usize) -> Vec<Value> {
+pub fn segment_to_json(
+    conn: &Connection,
+    text: &str,
+    index: Option<&crate::index::WordIndex>,
+    limit: usize,
+) -> Vec<Value> {
     let results = dict_segment(conn, text, index, limit);
     let mut output = Vec::new();
     for (word_infos, score) in results {
@@ -172,7 +187,12 @@ pub fn segment_to_json(conn: &Connection, text: &str, index: Option<&crate::inde
 }
 
 /// `segment_to_text` — ichiran -i style formatted output.
-pub fn segment_to_text(conn: &Connection, text: &str, index: Option<&crate::index::WordIndex>, limit: usize) -> String {
+pub fn segment_to_text(
+    conn: &Connection,
+    text: &str,
+    index: Option<&crate::index::WordIndex>,
+    limit: usize,
+) -> String {
     let results = dict_segment(conn, text, index, limit);
     if results.is_empty() {
         return text.to_string();

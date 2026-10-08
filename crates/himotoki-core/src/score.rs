@@ -335,10 +335,10 @@ fn determine_primary_full_impl(
 
     if (ord_val == 0 || cop_da_p)
         && (kanji_p || conj_types_p)
-            && ((kanji_p && !prefer_kana) || (common_p && pronoun_p) || entry.n_kanji == 0)
-        {
-            return true;
-        }
+        && ((kanji_p && !prefer_kana) || (common_p && pronoun_p) || entry.n_kanji == 0)
+    {
+        return true;
+    }
 
     if prefer_kana && kanji_p && ord_val == 0 {
         // uk on the ord=0 sense blocks primacy
@@ -440,7 +440,13 @@ pub fn calc_score(
         Vec::new()
     } else if conj_only {
         match word.conjugations() {
-            Conj::Ids(ids) => get_conj_data(conn, seq, None, Some(ids), Some(std::slice::from_ref(&text))),
+            Conj::Ids(ids) => get_conj_data(
+                conn,
+                seq,
+                None,
+                Some(ids),
+                Some(std::slice::from_ref(&text)),
+            ),
             _ => Vec::new(),
         }
     } else if !word.is_root() {

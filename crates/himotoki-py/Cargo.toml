@@ -2,6 +2,7 @@
 name = "himotoki-py"
 version = "0.3.2"
 edition = "2021"
+rust-version = "1.87"
 description = "Python bindings for himotoki (PyO3)"
 license = "MIT"
 

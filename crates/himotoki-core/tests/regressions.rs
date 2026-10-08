@@ -31,7 +31,11 @@ fn index_does_not_change_results() {
     // A repeated non-dictionary substring (やで) used to get duplicate
     // suffix compounds only when the word index was in use.
     let env = require_db!();
-    for text in ["ややでにやよのへやもへやで", "しししししししししし", "猫が好き"] {
+    for text in [
+        "ややでにやよのへやもへやで",
+        "しししししししししし",
+        "猫が好き",
+    ] {
         let with = segment_to_json(&env.conn, text, Some(&env.index), 5);
         let without = segment_to_json(&env.conn, text, None, 5);
         assert_eq!(with, without, "{text}");
@@ -47,7 +51,9 @@ fn pathological_input_is_rejected_quickly() {
     assert!(err.is::<himotoki_core::TextTooComplexError>(), "{err}");
     assert!(t0.elapsed().as_secs_f64() < 2.0);
     // Dense but natural text of the same length is accepted.
-    let natural = "国境の長いトンネルを抜けると雪国であった。夜の底が白くなった。信号所に汽車が止まった。".repeat(3);
+    let natural =
+        "国境の長いトンネルを抜けると雪国であった。夜の底が白くなった。信号所に汽車が止まった。"
+            .repeat(3);
     let natural: String = natural.chars().take(100).collect();
     assert!(himotoki_core::analyze(&env.conn, &natural, Some(&env.index), 5, None).is_ok());
 }

@@ -41,7 +41,9 @@ fn shared(db_path: Option<&str>) -> PyResult<&'static Shared> {
     if let Some(s) = SHARED.get() {
         return Ok(s);
     }
-    let path = db_path.map(PathBuf::from).unwrap_or_else(db::default_db_path);
+    let path = db_path
+        .map(PathBuf::from)
+        .unwrap_or_else(db::default_db_path);
     let conn = db::open(&path)
         .map_err(|e| PyRuntimeError::new_err(format!("failed to open {}: {e}", path.display())))?;
     himotoki_core::warm_up(&conn);
@@ -119,7 +121,9 @@ fn analyze(
                 .map(|(wis, score)| {
                     (
                         serde_json::Value::Array(
-                            wis.iter().map(|wi| word_info_gloss_json(conn, wi, false)).collect(),
+                            wis.iter()
+                                .map(|wi| word_info_gloss_json(conn, wi, false))
+                                .collect(),
                         ),
                         num_json(*score),
                     )

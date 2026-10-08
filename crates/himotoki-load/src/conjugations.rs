@@ -180,8 +180,7 @@ fn get_kana_suffix_length(word: &str) -> usize {
 pub fn construct_conjugation(word: &str, rule: &ConjugationRule) -> String {
     let iskana = is_kana(word);
     let kana_suffix_len = get_kana_suffix_length(word);
-    let use_kana_rules =
-        iskana || (kana_suffix_len > 0 && kana_suffix_len > rule.stem as usize);
+    let use_kana_rules = iskana || (kana_suffix_len > 0 && kana_suffix_len > rule.stem as usize);
 
     let mut stem = rule.stem as usize;
     if use_kana_rules && !rule.euphr.is_empty() {

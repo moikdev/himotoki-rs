@@ -74,7 +74,12 @@ fn temp_fst_path(key: Option<&str>) -> PathBuf {
 /// `size:mtime_ns` of the database file.
 fn db_fingerprint(db_path: &Path) -> Option<String> {
     let m = std::fs::metadata(db_path).ok()?;
-    let mtime = m.modified().ok()?.duration_since(UNIX_EPOCH).ok()?.as_nanos();
+    let mtime = m
+        .modified()
+        .ok()?
+        .duration_since(UNIX_EPOCH)
+        .ok()?
+        .as_nanos();
     Some(format!("{}:{}", m.len(), mtime))
 }
 

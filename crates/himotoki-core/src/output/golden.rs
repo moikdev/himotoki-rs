@@ -170,7 +170,12 @@ pub fn paths_line(
 }
 
 /// output.jsonl line for input `i` (segment_to_json result).
-pub fn output_line(conn: &rusqlite::Connection, index: Option<&crate::index::WordIndex>, i: u64, text: &str) -> String {
+pub fn output_line(
+    conn: &rusqlite::Connection,
+    index: Option<&crate::index::WordIndex>,
+    i: u64,
+    text: &str,
+) -> String {
     let js = crate::output::format::segment_to_json(conn, text, index, 5);
     serde_json::to_string(&json!({"i": i, "text": text, "json": js}))
         .unwrap_or_else(|e| format!("{{\"i\":{},\"error\":\"{}\"}}", i, e))

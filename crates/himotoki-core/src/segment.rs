@@ -161,10 +161,12 @@ pub fn find_sticky_positions(text: &str) -> Vec<usize> {
         } else if is_modifier_class(char_class) || is_iteration_class(char_class) {
             let at_end = pos == text_len - 1;
             if !at_end {
-                if pos > 0 && char_class == Some("long_vowel")
-                    && is_long_vowel_modifier(chars[pos - 1]) {
-                        continue;
-                    }
+                if pos > 0
+                    && char_class == Some("long_vowel")
+                    && is_long_vowel_modifier(chars[pos - 1])
+                {
+                    continue;
+                }
                 sticky.push(pos);
             }
         }
@@ -644,6 +646,9 @@ pub fn find_best_path(
         .collect()
 }
 
+/// Best paths with their scores, highest first.
+pub type ScoredPaths = Vec<(Vec<Rc<PathNode>>, f64)>;
+
 /// `segment_text` — full pipeline entry.
 pub fn segment_text(
     conn: &Connection,
@@ -680,7 +685,7 @@ pub fn segment_text_bounded(
     index: Option<&WordIndex>,
     limit: usize,
     max_pairs: Option<usize>,
-) -> Result<Vec<(Vec<Rc<PathNode>>, f64)>, crate::TextTooComplexError> {
+) -> Result<ScoredPaths, crate::TextTooComplexError> {
     if text.is_empty() {
         return Ok(Vec::new());
     }

@@ -108,15 +108,13 @@ impl Reading {
 // ============================================================================
 
 /// Mirrors Python `Optional[List[int] | 'root']`.
-#[derive(Debug, Clone, PartialEq)]
-#[derive(Default)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub enum Conj {
     #[default]
     Unset,
     Root,
     Ids(Vec<i64>),
 }
-
 
 impl Conj {
     pub fn is_root(&self) -> bool {

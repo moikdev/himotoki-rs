@@ -208,7 +208,11 @@ pub fn preload_scoring_caches(conn: &Connection, seqs: &HashSet<i64>) {
             let params: Vec<rusqlite::types::Value> =
                 pos_missing.iter().map(|i| (*i).into()).collect();
             if let Ok(rows) = stmt.query_map(rusqlite::params_from_iter(params), |r| {
-                Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?))
+                Ok((
+                    r.get::<_, i64>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, i64>(2)?,
+                ))
             }) {
                 let arch = arch_senses(conn);
                 for r in rows.flatten() {
@@ -325,7 +329,11 @@ pub fn get_non_arch_posi(conn: &Connection, seq_set: &HashSet<i64>) -> HashSet<S
         if let Ok(mut stmt) = conn.prepare_cached(&sql) {
             let params: Vec<rusqlite::types::Value> = missing.iter().map(|i| (*i).into()).collect();
             if let Ok(rows) = stmt.query_map(rusqlite::params_from_iter(params), |r| {
-                Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?))
+                Ok((
+                    r.get::<_, i64>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, i64>(2)?,
+                ))
             }) {
                 let arch = arch_senses(conn);
                 for r in rows.flatten() {
