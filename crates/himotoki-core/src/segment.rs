@@ -651,15 +651,51 @@ pub fn segment_text(
     index: Option<&WordIndex>,
     limit: usize,
 ) -> Vec<(Vec<Rc<PathNode>>, f64)> {
+    match segment_text_bounded(conn, text, index, limit, None) {
+        Ok(out) => out,
+        Err(_) => unreachable!("unbounded segmentation cannot exceed a budget"),
+    }
+}
+
+/// Number of (left, right) segment-list pairs the best-path DP examines.
+/// DP time is roughly linear in this; natural text stays near 1.2·len²
+/// while pathological repeats (e.g. て×100) reach ~20·len².
+pub fn segment_pair_count(segment_lists: &[SegmentList]) -> usize {
+    // Lists are emitted in ascending start order.
+    segment_lists
+        .iter()
+        .enumerate()
+        .map(|(i, left)| {
+            let rest = &segment_lists[i + 1..];
+            rest.len() - rest.partition_point(|right| right.start < left.end)
+        })
+        .sum()
+}
+
+/// `segment_text` that refuses (before the expensive DP) when the candidate
+/// lattice has more than `max_pairs` segment pairs.
+pub fn segment_text_bounded(
+    conn: &Connection,
+    text: &str,
+    index: Option<&WordIndex>,
+    limit: usize,
+    max_pairs: Option<usize>,
+) -> Result<Vec<(Vec<Rc<PathNode>>, f64)>, crate::TextTooComplexError> {
     if text.is_empty() {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     let prof = std::env::var("HIMOTOKI_PROFILE").is_ok();
     let t0 = std::time::Instant::now();
     let mut segment_lists = join_substring_words(conn, text, index);
     let t_js = t0.elapsed();
     if segment_lists.is_empty() {
-        return Vec::new();
+        return Ok(Vec::new());
+    }
+    if let Some(max) = max_pairs {
+        let pairs = segment_pair_count(&segment_lists);
+        if pairs > max {
+            return Err(crate::TextTooComplexError { pairs, max });
+        }
     }
     let t1 = std::time::Instant::now();
     let out = find_best_path(&mut segment_lists, text.chars().count(), limit);
@@ -671,7 +707,7 @@ pub fn segment_text(
             t1.elapsed()
         );
     }
-    out
+    Ok(out)
 }
 
 /// `simple_segment` — best path's segments (flattened; Syn nodes skipped).

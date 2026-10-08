@@ -77,9 +77,12 @@ fn with_engine<T>(
         }
         f(slot.as_ref().unwrap(), sh.index.as_ref()).map_err(|e| {
             let msg = e.to_string();
-            match e.downcast_ref::<himotoki_core::TextTooLongError>() {
-                Some(_) => PyValueError::new_err(msg),
-                None => PyRuntimeError::new_err(msg),
+            if e.is::<himotoki_core::TextTooLongError>()
+                || e.is::<himotoki_core::TextTooComplexError>()
+            {
+                PyValueError::new_err(msg)
+            } else {
+                PyRuntimeError::new_err(msg)
             }
         })
     })
