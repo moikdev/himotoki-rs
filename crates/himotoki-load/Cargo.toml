@@ -2,6 +2,7 @@
 name = "himotoki-load"
 version = "0.3.2"
 edition = "2021"
+rust-version = "1.87"
 description = "JMdict XML → SQLite loader for himotoki (Rust port of himotoki/loading)"
 license = "MIT"
 

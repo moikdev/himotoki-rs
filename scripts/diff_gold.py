@@ -3,20 +3,44 @@
 Compare Rust dump output against the Python golden corpus.
 
 Usage:
-    uv run python scripts/diff_gold.py [--rust DIR] [--gold DIR]
-        [--only candidates|paths|output] [--show N]
+    python scripts/diff_gold.py [--rust DIR] [--gold DIR]
+        [--only candidates|paths|output] [--show N] [--normalize-ids]
 
 Semantic JSON comparison: dict key order ignored; int==float equal;
 reports a per-input status plus the first differing field paths.
+
+--normalize-ids ignores values that are internal to a particular database
+build: generated conjugation seqs (>= 10,000,000) and conjugation row ids.
+Use it when the Rust side ran against a freshly built database rather than
+the one the fixtures were dumped from.
 """
 
 import json
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).parent.parent
-GOLD = ROOT / "himotoki-rs" / "tests" / "golden"
+ROOT = Path(__file__).resolve().parent.parent
+GOLD = ROOT / "tests" / "golden"
 RUST = Path("/tmp/rust-gold")
+GENERATED_SEQ_MIN = 10_000_000
+
+
+def normalize_ids(x):
+    """Mask database-build-specific ids (see --normalize-ids)."""
+    if isinstance(x, dict):
+        out = {}
+        for k, v in x.items():
+            if k == "seq" and isinstance(v, int) and v >= GENERATED_SEQ_MIN:
+                out[k] = "<generated>"
+            elif k == "conjugations" and isinstance(v, list):
+                # Row ids differ per build; keep the list's length and shape.
+                out[k] = ["<conj-id>" if isinstance(c, int) else normalize_ids(c) for c in v]
+            else:
+                out[k] = normalize_ids(v)
+        return out
+    if isinstance(x, list):
+        return [normalize_ids(v) for v in x]
+    return x
 
 
 def load(path):
@@ -73,11 +97,13 @@ def main():
     if "--gold" in args:
         global GOLD
         GOLD = Path(args[args.index("--gold") + 1])
+    norm = normalize_ids if "--normalize-ids" in args else (lambda x: x)
 
     kinds = [only] if only else ["candidates", "paths", "output"]
+    failed = False
     for kind in kinds:
-        gold = load(GOLD / f"{kind}.jsonl")
-        rust = load(RUST / f"{kind}.jsonl")
+        gold = {i: norm(r) for i, r in load(GOLD / f"{kind}.jsonl").items()}
+        rust = {i: norm(r) for i, r in load(RUST / f"{kind}.jsonl").items()}
         same, diff, missing = 0, [], []
         for i, g in gold.items():
             r = rust.get(i)
@@ -96,7 +122,10 @@ def main():
             print(f"  #{i} {text[:40]}")
             for line in d[:6]:
                 print(f"      {line}")
+        if diff or missing:
+            failed = True
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

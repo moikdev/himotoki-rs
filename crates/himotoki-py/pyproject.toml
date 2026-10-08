@@ -12,5 +12,5 @@ license = { text = "MIT" }
 [tool.maturin]
 bindings = "pyo3"
 features = ["extension-module"]
-manifest-path = "himotoki-rs/crates/himotoki-py/Cargo.toml"
+manifest-path = "Cargo.toml"
 module-name = "himotoki_rs"

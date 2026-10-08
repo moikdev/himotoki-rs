@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::{Arc, LazyLock, Mutex};
+use std::sync::{Arc, LazyLock, RwLock};
 
 use crate::types::{Segment, SegmentList};
 
@@ -55,31 +55,32 @@ pub fn filter_is_noun() -> Filter {
 
 /// `filter_is_pos(*pos)` (cached by pos-set).
 pub fn filter_is_pos(pos: &[&'static str]) -> Filter {
-    static CACHE: LazyLock<Mutex<HashMap<Vec<&'static str>, Filter>>> =
-        LazyLock::new(|| Mutex::new(HashMap::new()));
+    static CACHE: LazyLock<RwLock<HashMap<Vec<&'static str>, Filter>>> =
+        LazyLock::new(|| RwLock::new(HashMap::new()));
     let mut key = pos.to_vec();
     key.sort_unstable();
-    if let Some(f) = CACHE.lock().unwrap().get(&key) {
+    if let Some(f) = CACHE.read().unwrap().get(&key) {
         return f.clone();
     }
     let set: std::collections::HashSet<&'static str> = pos.iter().copied().collect();
     let f = cached_filter(move |seg| seg.info.posi.iter().any(|p| set.contains(p.as_str())));
-    CACHE.lock().unwrap().insert(key, f.clone());
+    CACHE.write().unwrap().insert(key, f.clone());
     f
 }
 
 /// `filter_in_seq_set(*seqs)` — seq_set intersection (cached).
 pub fn filter_in_seq_set(seqs: &[i64]) -> Filter {
-    static CACHE: LazyLock<Mutex<HashMap<Vec<i64>, Filter>>> =
-        LazyLock::new(|| Mutex::new(HashMap::new()));
+    static CACHE: LazyLock<RwLock<HashMap<Vec<i64>, Filter>>> =
+        LazyLock::new(|| RwLock::new(HashMap::new()));
     let mut key = seqs.to_vec();
     key.sort_unstable();
-    if let Some(f) = CACHE.lock().unwrap().get(&key) {
+    if let Some(f) = CACHE.read().unwrap().get(&key) {
         return f.clone();
     }
-    let set: std::collections::HashSet<i64> = seqs.iter().copied().collect();
-    let f = cached_filter(move |seg| !seg.info.seq_set.is_disjoint(&set));
-    CACHE.lock().unwrap().insert(key, f.clone());
+    // Tiny sets (1-5 seqs): a linear scan beats hashing.
+    let set: Vec<i64> = key.clone();
+    let f = cached_filter(move |seg| seg.info.seq_set.iter().any(|s| set.contains(s)));
+    CACHE.write().unwrap().insert(key, f.clone());
     f
 }
 
@@ -92,9 +93,9 @@ pub fn filter_in_seq_set_simple(seqs: &[i64]) -> Filter {
 
 /// `filter_is_conjugation(conj_type)` (cached).
 pub fn filter_is_conjugation(conj_type: i64) -> Filter {
-    static CACHE: LazyLock<Mutex<HashMap<i64, Filter>>> =
-        LazyLock::new(|| Mutex::new(HashMap::new()));
-    if let Some(f) = CACHE.lock().unwrap().get(&conj_type) {
+    static CACHE: LazyLock<RwLock<HashMap<i64, Filter>>> =
+        LazyLock::new(|| RwLock::new(HashMap::new()));
+    if let Some(f) = CACHE.read().unwrap().get(&conj_type) {
         return f.clone();
     }
     let f = cached_filter(move |seg| {
@@ -105,7 +106,7 @@ pub fn filter_is_conjugation(conj_type: i64) -> Filter {
                 .unwrap_or(false)
         })
     });
-    CACHE.lock().unwrap().insert(conj_type, f.clone());
+    CACHE.write().unwrap().insert(conj_type, f.clone());
     f
 }
 

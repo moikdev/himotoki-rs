@@ -2,6 +2,7 @@
 name = "himotoki-core"
 version = "0.3.2"
 edition = "2021"
+rust-version = "1.87"
 description = "Japanese morphological analyzer — Rust port of himotoki"
 license = "MIT"
 

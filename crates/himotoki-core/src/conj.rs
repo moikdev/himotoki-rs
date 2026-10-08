@@ -1,7 +1,7 @@
 //! Conjugation lookup — port of `himotoki/lookup/conj_data.py`.
 
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::RwLock;
 
 use rusqlite::Connection;
 
@@ -13,20 +13,20 @@ use crate::types::{Conj, ConjData, Word};
 static BLOCKED_CONJUGATIONS: &[(i64, i64)] = &[(2029090, 2820690)];
 
 type CacheKey = (i64, Option<i64>, Option<Vec<i64>>, Option<Vec<String>>);
-static CONJ_DATA_CACHE: Mutex<Option<HashMap<CacheKey, Vec<ConjData>>>> = Mutex::new(None);
+static CONJ_DATA_CACHE: RwLock<Option<HashMap<CacheKey, Vec<ConjData>>>> = RwLock::new(None);
 
 fn cache_get(key: &CacheKey) -> Option<Vec<ConjData>> {
-    let guard = CONJ_DATA_CACHE.lock().unwrap();
+    let guard = CONJ_DATA_CACHE.read().unwrap();
     guard.as_ref()?.get(key).cloned()
 }
 fn cache_put(key: CacheKey, val: Vec<ConjData>) {
-    let mut guard = CONJ_DATA_CACHE.lock().unwrap();
-    guard.get_or_insert_with(HashMap::new).insert(key, val);
+    let mut guard = CONJ_DATA_CACHE.write().unwrap();
+    crate::cache::bounded(guard.get_or_insert_with(HashMap::new)).insert(key, val);
 }
 
 /// `clear_scoring_caches` counterpart — drop the conj-data cache.
 pub fn clear_conj_cache() {
-    *CONJ_DATA_CACHE.lock().unwrap() = None;
+    *CONJ_DATA_CACHE.write().unwrap() = None;
 }
 
 /// `get_conj_data` — fetch conjugation records for an entry.

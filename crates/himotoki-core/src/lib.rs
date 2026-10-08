@@ -57,6 +57,46 @@ impl std::fmt::Display for TextTooLongError {
 }
 impl std::error::Error for TextTooLongError {}
 
+/// Segment-pair budget for `analyze`: env `HIMOTOKI_MAX_SEGMENT_PAIRS`, else
+/// `10 × max_length²` — about 8× the densest natural text at that length,
+/// below pathological repeats (e.g. て×100 is ~21·len²).
+pub fn max_segment_pairs(max_length: usize) -> usize {
+    std::env::var("HIMOTOKI_MAX_SEGMENT_PAIRS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or_else(|| max_length.saturating_mul(max_length).saturating_mul(10))
+}
+
+/// Input whose candidate lattice is too dense to segment within budget
+/// (degenerate repeats like て×100). Guards services against slow inputs.
+#[derive(Debug)]
+pub struct TextTooComplexError {
+    pub pairs: usize,
+    pub max: usize,
+}
+
+impl std::fmt::Display for TextTooComplexError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "text too complex to segment ({} candidate pairs > {}). \
+             Raise HIMOTOKI_MAX_SEGMENT_PAIRS to allow it.",
+            self.pairs, self.max
+        )
+    }
+}
+impl std::error::Error for TextTooComplexError {}
+
+/// `himotoki/__init__.py:warm_up` — build every lazily-initialized cache
+/// (suffix map, counter cache, archaic sets, grammar rule registries) so the
+/// first `analyze` call isn't cold.
+pub fn warm_up(conn: &rusqlite::Connection) {
+    grammar::suffixes::init_suffixes(conn, false);
+    let _ = grammar::counters::init_counter_cache(conn);
+    cache::warm(conn);
+    let _ = analyze(conn, "猫が好き", None, 1, None);
+}
+
 /// `himotoki/__init__.py:analyze` — NFC-normalize, length-check, segment, fill word infos.
 ///
 /// Returns `(word_infos, score)` tuples sorted by score descending.
@@ -83,7 +123,13 @@ pub fn analyze(
         }
         .into());
     }
-    let results = segment::segment_text(conn, &text, index, limit);
+    let results = segment::segment_text_bounded(
+        conn,
+        &text,
+        index,
+        limit,
+        Some(max_segment_pairs(effective_max)),
+    )?;
     Ok(results
         .into_iter()
         .map(|(path, score)| {

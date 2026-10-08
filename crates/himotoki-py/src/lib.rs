@@ -15,49 +15,81 @@ use himotoki_core::index::WordIndex;
 use himotoki_core::output::format::word_info_gloss_json;
 use himotoki_core::output::golden::num_json;
 
-/// Engine state: one SQLite connection + optional FST word index.
-struct Engine {
-    conn: rusqlite::Connection,
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
+/// Shared, immutable engine state (path + FST index). Each OS thread gets
+/// its own SQLite connection so `analyze` calls run in parallel once the
+/// GIL is released.
+struct Shared {
     index: Option<WordIndex>,
     path: PathBuf,
 }
 
-static ENGINE: OnceLock<Mutex<Engine>> = OnceLock::new();
+static SHARED: OnceLock<Shared> = OnceLock::new();
+static INIT: Mutex<()> = Mutex::new(());
 
-fn init_engine(db_path: Option<&str>) -> Engine {
+thread_local! {
+    static CONN: std::cell::RefCell<Option<rusqlite::Connection>> = const { std::cell::RefCell::new(None) };
+}
+
+fn shared(db_path: Option<&str>) -> PyResult<&'static Shared> {
+    if let Some(s) = SHARED.get() {
+        return Ok(s);
+    }
+    let _g = INIT.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(s) = SHARED.get() {
+        return Ok(s);
+    }
     let path = db_path
         .map(PathBuf::from)
         .unwrap_or_else(db::default_db_path);
-    let conn = db::open(&path).unwrap_or_else(|e| panic!("failed to open {}: {e}", path.display()));
-    himotoki_core::grammar::suffixes::init_suffixes(&conn, false);
-    let _ = himotoki_core::grammar::counters::init_counter_cache(&conn);
+    let conn = db::open(&path)
+        .map_err(|e| PyRuntimeError::new_err(format!("failed to open {}: {e}", path.display())))?;
+    // Per-thread connections reopen this path later, possibly after the
+    // process changed directory: pin it to an absolute, canonical path.
+    let path = std::fs::canonicalize(&path).unwrap_or(path);
+    himotoki_core::warm_up(&conn);
     let index = Some(WordIndex::load_or_build(&path, &conn));
-    Engine { conn, index, path }
+    Ok(SHARED.get_or_init(|| Shared { index, path }))
+}
+
+fn same_file(a: &std::path::Path, b: &std::path::Path) -> bool {
+    match (std::fs::canonicalize(a), std::fs::canonicalize(b)) {
+        (Ok(x), Ok(y)) => x == y,
+        _ => a == b,
+    }
 }
 
 fn with_engine<T>(
     db_path: Option<&str>,
-    f: impl FnOnce(&Engine) -> anyhow::Result<T>,
+    f: impl FnOnce(&rusqlite::Connection, Option<&WordIndex>) -> anyhow::Result<T>,
 ) -> PyResult<T> {
-    let engine = ENGINE.get_or_init(|| Mutex::new(init_engine(db_path)));
-    let eng = engine
-        .lock()
-        .map_err(|_| PyRuntimeError::new_err("himotoki engine lock poisoned"))?;
+    let sh = shared(db_path)?;
     if let Some(p) = db_path {
-        if eng.path != *p {
+        if !same_file(&sh.path, std::path::Path::new(p)) {
             return Err(PyRuntimeError::new_err(format!(
                 "engine already initialized with {}; cannot switch to {}",
-                eng.path.display(),
+                sh.path.display(),
                 p
             )));
         }
     }
-    f(&eng).map_err(|e| {
-        let msg = e.to_string();
-        match e.downcast_ref::<himotoki_core::TextTooLongError>() {
-            Some(_) => PyValueError::new_err(msg),
-            None => PyRuntimeError::new_err(msg),
+    CONN.with(|cell| {
+        let mut slot = cell.borrow_mut();
+        if slot.is_none() {
+            *slot = Some(db::open(&sh.path).map_err(|e| PyRuntimeError::new_err(e.to_string()))?);
         }
+        f(slot.as_ref().unwrap(), sh.index.as_ref()).map_err(|e| {
+            let msg = e.to_string();
+            if e.is::<himotoki_core::TextTooLongError>()
+                || e.is::<himotoki_core::TextTooComplexError>()
+            {
+                PyValueError::new_err(msg)
+            } else {
+                PyRuntimeError::new_err(msg)
+            }
+        })
     })
 }
 
@@ -83,34 +115,24 @@ fn analyze(
         return Err(PyValueError::new_err("limit must be >= 1"));
     }
     let text_owned = text.to_string();
-    let results = py.allow_threads(move || {
-        with_engine(db_path, |eng| {
-            himotoki_core::analyze(
-                &eng.conn,
-                &text_owned,
-                eng.index.as_ref(),
-                limit,
-                max_length,
-            )
+    py.allow_threads(move || {
+        with_engine(db_path, |conn, index| {
+            let results = himotoki_core::analyze(conn, &text_owned, index, limit, max_length)?;
+            // Gloss JSON also hits SQLite, so build it before re-taking the GIL.
+            Ok(results
+                .iter()
+                .map(|(wis, score)| {
+                    (
+                        serde_json::Value::Array(
+                            wis.iter()
+                                .map(|wi| word_info_gloss_json(conn, wi, false))
+                                .collect(),
+                        ),
+                        num_json(*score),
+                    )
+                })
+                .collect::<Vec<(serde_json::Value, serde_json::Value)>>())
         })
-    })?;
-
-    // Now that we hold the GIL again, convert to Python objects.
-    with_engine(db_path, |eng| {
-        let out: Vec<(serde_json::Value, serde_json::Value)> = results
-            .iter()
-            .map(|(wis, score)| {
-                (
-                    serde_json::Value::Array(
-                        wis.iter()
-                            .map(|wi| word_info_gloss_json(&eng.conn, wi, false))
-                            .collect(),
-                    ),
-                    num_json(*score),
-                )
-            })
-            .collect();
-        Ok(out)
     })
     .and_then(|v| {
         pythonize::pythonize(py, &v)
@@ -120,21 +142,21 @@ fn analyze(
 }
 
 /// `warm_up` — eagerly initialize caches (suffix map, counter cache,
-/// archaic-word set, FST index) so the first `analyze` isn't cold.
+/// archaic sets, rule registries, FST index) so the first `analyze` isn't
+/// cold.
 #[pyfunction]
 #[pyo3(signature = (db_path=None))]
 fn warm_up(db_path: Option<&str>) -> PyResult<()> {
-    ENGINE.get_or_init(|| Mutex::new(init_engine(db_path)));
-    Ok(())
+    shared(db_path).map(|_| ())
 }
 
 /// Resolved database path (after env/default resolution).
 #[pyfunction]
 #[pyo3(signature = ())]
 fn db_path() -> PyResult<String> {
-    ENGINE
+    SHARED
         .get()
-        .map(|e| e.lock().unwrap().path.display().to_string())
+        .map(|s| s.path.display().to_string())
         .ok_or_else(|| PyRuntimeError::new_err("engine not initialized"))
 }
 

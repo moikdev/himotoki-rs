@@ -2,6 +2,7 @@
 name = "himotoki-py"
 version = "0.3.2"
 edition = "2021"
+rust-version = "1.87"
 description = "Python bindings for himotoki (PyO3)"
 license = "MIT"
 
@@ -21,6 +22,7 @@ pythonize = "0.24"
 serde_json = { workspace = true }
 rusqlite = { workspace = true }
 anyhow = { workspace = true }
+mimalloc = { version = "0.1", default-features = false }
 
 [package.metadata.maturin]
 name = "himotoki_rs"

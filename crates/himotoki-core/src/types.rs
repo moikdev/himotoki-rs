@@ -108,15 +108,13 @@ impl Reading {
 // ============================================================================
 
 /// Mirrors Python `Optional[List[int] | 'root']`.
-#[derive(Debug, Clone, PartialEq)]
-#[derive(Default)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub enum Conj {
     #[default]
     Unset,
     Root,
     Ids(Vec<i64>),
 }
-
 
 impl Conj {
     pub fn is_root(&self) -> bool {
@@ -520,7 +518,7 @@ pub struct Segment {
     pub text_cache: Option<String>,
     pub top: bool,
     /// filter_id -> cached result (Python `_filter_cache`)
-    pub filter_cache: RefCell<HashMap<u32, bool>>,
+    pub filter_cache: RefCell<rustc_hash::FxHashMap<u32, bool>>,
 }
 
 impl Segment {
@@ -533,7 +531,7 @@ impl Segment {
             info: ScoreInfo::default(),
             text_cache: None,
             top: false,
-            filter_cache: RefCell::new(HashMap::new()),
+            filter_cache: RefCell::new(rustc_hash::FxHashMap::default()),
         }
     }
     pub fn get_text(&mut self) -> &str {
@@ -550,23 +548,20 @@ impl Segment {
 
 #[derive(Debug, Clone, Default)]
 pub struct SegmentList {
-    /// Rc so that filtered/cloned lists share segments (Python's reference
-    /// semantics make list copies shallow — mirrors that cost profile).
-    pub segments: Vec<Rc<Segment>>,
+    /// Shared, immutable segment vector: filtered/passthrough copies made by
+    /// segfilters and synergies are refcount bumps, not allocations.
+    pub segments: Rc<Vec<Rc<Segment>>>,
     pub start: usize,
     pub end: usize,
-    /// DP scratch — populated by find_best_path.
-    pub top: Option<crate::segment::TopArray>,
     pub matches: usize,
 }
 
 impl SegmentList {
     pub fn new(segments: Vec<Rc<Segment>>, start: usize, end: usize, matches: usize) -> Self {
         SegmentList {
-            segments,
+            segments: Rc::new(segments),
             start,
             end,
-            top: None,
             matches,
         }
     }

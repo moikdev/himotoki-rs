@@ -4,21 +4,22 @@ Rust port of [himotoki](https://github.com/moikdev/himotoki-py), a Japanese
 morphological analyzer (ichiran-compatible): segmentation with readings,
 conjugation analysis, dictionary glosses, and CLI output formats.
 
-Byte-for-byte behavioral parity with the Python implementation is verified
-against a 633-sentence golden corpus (candidates, best paths, and rendered
-output are all identical). In a containerized stress benchmark the Rust port
-runs ~3.6x faster than Python (39.5 ms/input mean vs 141.6 ms) at half the
-peak memory, with identical results.
+Behavioral parity with the Python implementation is verified against a
+633-sentence golden corpus (candidates, best paths, and rendered output are
+all identical; see [Known differences](#known-differences-from-python) for
+the deliberate exceptions). On that corpus the Rust port averages ~5 ms per
+sentence single-threaded on an Apple M-series laptop, and the Python
+bindings scale across threads.
 
 ## Workspace
 
 | crate | purpose |
 |---|---|
 | `himotoki-core` | segmentation engine: lookup, conjugation tracing, scoring, grammar overlays (suffixes, counters, splits, synergies, segfilters), output formatting |
-| `himotoki-cli` | `himotoki` binary — analyze/dump/bench, flags `-r -f -k -j -l -d -v` |
+| `himotoki-cli` | `himotoki` binary — analyze/dump/bench, flags `-r -f -k -j -l -d -V` |
 | `himotoki-load` | database builder — JMdict XML loader, conjugation generator, errata passes |
 | `himotoki-py` | PyO3 bindings (`himotoki_rs.analyze`, abi3 wheel for Python >=3.9) |
-| `xtask` | dev tooling |
+| `xtask` | placeholder for dev automation (currently a stub) |
 
 ## Build
 
@@ -29,32 +30,52 @@ cargo build --release -p himotoki-cli
 
 ## Database
 
-`himotoki` needs `himotoki.db` (SQLite, ~1.8 GB). Either copy one built by
-the Python project, or build it here from the bundled data files:
+`himotoki` needs `himotoki.db` (SQLite, ~2 GB). Either copy one built by
+the Python project, or build it here from the bundled data files (~80 s):
 
 ```sh
-cargo run --release -p himotoki-load -- jmdict --xml data/JMdict_e.xml --db data/himotoki.db
+cargo run --release -p himotoki-load -- jmdict data/JMdict_e.xml --db data/himotoki.db
 cargo run --release -p himotoki-load -- conj   --db data/himotoki.db --data-dir data
 cargo run --release -p himotoki-load -- errata --db data/himotoki.db
 ```
 
-This reproduces the Python pipeline end-to-end (~1 min; all table
-cardinalities and root-entry rows verified identical). Generated
-conjugation sequence numbers differ from a Python build because Python
-allocates them via `imap_unordered` — the content is equivalent.
+A database built this way reproduces the golden corpus 633/633 on
+candidates, paths, and output. Only build-internal ids differ from a Python
+build (generated conjugation seq numbers and conjugation row ids, which
+Python allocates via `imap_unordered`); compare with
+`scripts/diff_gold.py --normalize-ids`.
+
+The database is looked up from `-d`, then `HIMOTOKI_DB_PATH`, then
+`~/.himotoki/himotoki.db`. It is opened read-only and, unless a non-empty
+`-wal` file holds uncheckpointed changes, immutable (no locking, works on
+read-only filesystems), so don't rebuild it in place while a process is
+using it. A word index (`himotoki.db.fst`) is built on first use (~5 s)
+and cached next to the database, or in the temp directory if that directory
+is read-only; each cache file records the database path, size and mtime it
+was built from, and is not used while a `-wal` file holds pending changes.
 
 ## Usage
 
 ```sh
-himotoki '彼女は終わってしまった'        # readings: kanojyo ha owatteshimatta
-himotoki -f '彼女は終わってしまった'     # full glosses + conjugation tree
-himotoki -r '…'                        # romanized only
+himotoki '彼女は終わってしまった'        # glosses + conjugation tree
+himotoki -f '彼女は終わってしまった'     # romanization + glosses + conjugation tree
+himotoki -r '…'                        # romanized only: kanojyo ha owatteshimatta
 himotoki -k '…'                        # kana only
 himotoki -j '…'                        # JSON (word_info_gloss_json shape)
 himotoki -d /path/to/himotoki.db '…'   # explicit DB path
 himotoki bench --inputs tests/golden/inputs.jsonl --rounds 3 --json-out rs.json
 himotoki dump --inputs tests/golden/inputs.jsonl --out out/
 ```
+
+### Limits
+
+`analyze()` (and the Python bindings) reject input longer than
+`HIMOTOKI_MAX_TEXT_LENGTH` characters (default 100), and input whose
+candidate lattice is too dense to segment quickly — degenerate repeats such
+as `て`×100 — with `TextTooComplexError` (`ValueError` in Python). The
+budget is `HIMOTOKI_MAX_SEGMENT_PAIRS` segment pairs, default
+`10 × max_length²`, roughly 8× the densest natural text of that length. The
+CLI applies neither limit.
 
 ## Python bindings
 
@@ -63,14 +84,48 @@ cd crates/himotoki-py
 maturin build --release      # abi3 wheel in target/wheels
 pip install target/wheels/himotoki_rs-*.whl
 python -c "import himotoki_rs; print(himotoki_rs.analyze('テスト'))"
+HIMOTOKI_DB_PATH=/path/to/himotoki.db pytest tests   # binding tests
 ```
+
+`analyze` releases the GIL and each thread gets its own SQLite connection,
+so calls from a thread pool run in parallel. Errors are `ValueError` for bad
+input and `RuntimeError` otherwise (e.g. database not found).
+
+## Tests
+
+```sh
+cargo test --workspace                                   # unit tests
+HIMOTOKI_DB_PATH=/path/to/himotoki.db cargo test --workspace   # + integration tests
+```
+
+Integration tests need a built database and skip without one.
 
 ## Golden-parity gate
 
 `tests/golden/` holds dumps generated by the reference Python
-implementation (`scripts/dump_gold.py`). Regenerate Rust-side artifacts
-with `himotoki dump` and compare with `scripts/diff_gold.py`. Current
-status: 633/633 identical on candidates, paths, and output.
+implementation (`HIMOTOKI_PY_ROOT=/path/to/himotoki-py scripts/dump_gold.py`).
+Regenerate Rust-side artifacts and compare:
+
+```sh
+himotoki -d /path/to/himotoki.db dump --inputs tests/golden/inputs.jsonl --out /tmp/rust-gold
+python scripts/diff_gold.py --rust /tmp/rust-gold                 # DB the fixtures came from
+python scripts/diff_gold.py --rust /tmp/rust-gold --normalize-ids # freshly built DB
+```
+
+Current status: 633/633 identical on candidates, paths, and output. CI
+builds the database from `data/` and runs this gate.
+
+## Known differences from Python
+
+- **Counter readings with several entries.** For `2本` Python lists the
+  もと reading first (an accident of database row order); the Rust port
+  lists ほん first, so `2本` reads にほん.
+- **Duplicate alternatives.** When a non-dictionary substring repeats in
+  the input (e.g. `やで` twice), Python's library path emits the same
+  suffix compound twice as an "alternative"; the Rust port emits it once
+  (Python's CLI, which runs without the word index, agrees with Rust).
+- **Pathological input.** `analyze()` rejects degenerate input instead of
+  spending seconds on it (see [Limits](#limits)).
 
 ## License
 

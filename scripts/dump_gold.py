@@ -11,7 +11,12 @@ Generates JSONL fixtures under himotoki-rs/tests/golden/:
 - output.jsonl    : per-input segment_to_json result (gates output layer)
 
 Usage:
-    uv run python scripts/dump_gold.py [--limit N] [--only inputs|candidates|paths|output]
+    HIMOTOKI_PY_ROOT=/path/to/himotoki-py \\
+        python scripts/dump_gold.py [--limit N] [--only inputs|candidates|paths|output]
+
+HIMOTOKI_PY_ROOT is a checkout of the Python implementation: it supplies the
+`himotoki` package, the corpus sources (scripts/test_sentences.py,
+output/llm_results.json) and the default database (data/himotoki.db).
 """
 
 import json
@@ -20,8 +25,11 @@ import sys
 import unicodedata
 from pathlib import Path
 
-ROOT = Path(__file__).parent.parent
-GOLD_DIR = ROOT / "himotoki-rs" / "tests" / "golden"
+GOLD_DIR = Path(__file__).resolve().parent.parent / "tests" / "golden"
+if not os.environ.get("HIMOTOKI_PY_ROOT"):
+    sys.exit("set HIMOTOKI_PY_ROOT to a checkout of the Python himotoki repo")
+ROOT = Path(os.environ["HIMOTOKI_PY_ROOT"]).resolve()
+sys.path.insert(0, str(ROOT))
 
 os.environ.setdefault("HIMOTOKI_DB_PATH", str(ROOT / "data" / "himotoki.db"))
 

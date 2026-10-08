@@ -3,6 +3,7 @@
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 
+use anyhow::Context;
 use clap::{Parser, Subcommand};
 
 use himotoki_core::chars::romanize_word;
@@ -12,6 +13,9 @@ use himotoki_core::index::WordIndex;
 use himotoki_core::output::format::{segment_to_json, simple_segment};
 use himotoki_core::output::golden;
 use himotoki_core::segment::segment_text;
+
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -96,7 +100,12 @@ enum Cmd {
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     let db_path = cli.db.unwrap_or_else(db::default_db_path);
-    let conn = db::open(&db_path)?;
+    let conn = db::open(&db_path).with_context(|| {
+        format!(
+            "cannot open {} (pass -d, set HIMOTOKI_DB_PATH, or build one with himotoki-load; see README)",
+            db_path.display()
+        )
+    })?;
     init_suffixes(&conn, false);
     let _ = himotoki_core::grammar::counters::init_counter_cache(&conn);
     let index = if cli.no_index {
@@ -161,21 +170,14 @@ fn main() -> anyhow::Result<()> {
                 total / (texts.len() * rounds) as f64
             );
             if let Some(out) = json_out {
-                let peak_rss_kb = std::fs::read_to_string("/proc/self/status")
-                    .ok()
-                    .and_then(|s| {
-                        s.lines()
-                            .find(|l| l.starts_with("VmHWM"))
-                            .and_then(|l| l.split_whitespace().nth(1)?.parse::<u64>().ok())
-                    })
-                    .unwrap_or(0);
+                let peak_rss_mb = peak_rss_mb();
                 let js = serde_json::json!({
                     "impl": "rust",
                     "inputs": texts.len(),
                     "rounds": rounds,
                     "segments": nsegs,
                     "per_input_ms": round_times,
-                    "peak_rss_mb": peak_rss_kb as f64 / 1024.0,
+                    "peak_rss_mb": peak_rss_mb,
                 });
                 std::fs::write(out, serde_json::to_string(&js)?)?;
             }
@@ -196,10 +198,12 @@ fn main() -> anyhow::Result<()> {
             }
             if cli.json {
                 let limit = if cli.limit > 0 { cli.limit as usize } else { 5 };
-                let output = segment_to_json(&conn, &text, limit);
+                let output = segment_to_json(&conn, &text, index.as_ref(), limit);
                 println!("{}", serde_json::to_string(&output)?);
             } else if cli.romanize {
-                let word_infos = simple_segment(&conn, &text, 5);
+                // Text modes take the single best path with limit=1, like
+                // Python's output_romanize/output_kana/output_full/output_default.
+                let word_infos = simple_segment(&conn, &text, index.as_ref(), 1);
                 if word_infos.is_empty() {
                     println!("{}", text);
                 } else {
@@ -210,7 +214,7 @@ fn main() -> anyhow::Result<()> {
                     println!("{}", parts.join(" "));
                 }
             } else if cli.kana {
-                let word_infos = simple_segment(&conn, &text, 5);
+                let word_infos = simple_segment(&conn, &text, index.as_ref(), 1);
                 if word_infos.is_empty() {
                     println!("{}", text);
                 } else {
@@ -220,7 +224,7 @@ fn main() -> anyhow::Result<()> {
                 }
             } else if cli.full {
                 // Python `output_full`: dict_segment + format_word_info_text(romanization)
-                let word_infos = simple_segment(&conn, &text, 5);
+                let word_infos = simple_segment(&conn, &text, index.as_ref(), 1);
                 if word_infos.is_empty() {
                     println!("{}", text);
                 } else {
@@ -229,7 +233,7 @@ fn main() -> anyhow::Result<()> {
                 }
             } else {
                 // default: format_word_info_text(include_romanization=False)
-                let word_infos = simple_segment(&conn, &text, 5);
+                let word_infos = simple_segment(&conn, &text, index.as_ref(), 1);
                 if word_infos.is_empty() {
                     println!("{}", text);
                 } else {
@@ -240,6 +244,27 @@ fn main() -> anyhow::Result<()> {
         }
     }
     Ok(())
+}
+
+/// Peak resident set size in MiB (getrusage: KiB on Linux, bytes on macOS).
+#[cfg(unix)]
+fn peak_rss_mb() -> f64 {
+    let mut ru: libc::rusage = unsafe { std::mem::zeroed() };
+    if unsafe { libc::getrusage(libc::RUSAGE_SELF, &mut ru) } != 0 {
+        return 0.0;
+    }
+    let raw = ru.ru_maxrss as f64;
+    if cfg!(target_os = "macos") {
+        raw / (1024.0 * 1024.0)
+    } else {
+        raw / 1024.0
+    }
+}
+
+/// Not measured on non-Unix platforms.
+#[cfg(not(unix))]
+fn peak_rss_mb() -> f64 {
+    0.0
 }
 
 /// `format_word_info_text` — like segment_to_text body on given word_infos.
@@ -346,7 +371,7 @@ fn dump(
             writeln!(f, "{}", golden::paths_line(conn, index, i, text))?;
         }
         if let Some(f) = out_file.as_mut() {
-            writeln!(f, "{}", golden::output_line(conn, i, text))?;
+            writeln!(f, "{}", golden::output_line(conn, index, i, text))?;
         }
 
         n += 1;

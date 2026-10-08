@@ -30,12 +30,12 @@ pub fn find_word(conn: &Connection, word: &str, root_only: bool) -> Vec<WordMatc
     };
     let sql = if root_only {
         format!(
-            "SELECT t.id, t.seq, t.text, t.ord, t.common, t.{extra} \
+            "SELECT t.id, t.seq, t.text, t.ord, t.common, t.{extra}, t.nokanji \
              FROM {table} t JOIN entry e ON t.seq = e.seq \
              WHERE t.text = ?1 AND e.root_p = 1"
         )
     } else {
-        format!("SELECT id, seq, text, ord, common, {extra} FROM {table} WHERE text = ?1")
+        format!("SELECT id, seq, text, ord, common, {extra}, nokanji FROM {table} WHERE text = ?1")
     };
     let mut matches: Vec<WordMatch> = Vec::new();
     if let Ok(mut stmt) = conn.prepare_cached(&sql) {
@@ -49,6 +49,7 @@ pub fn find_word(conn: &Connection, word: &str, root_only: bool) -> Vec<WordMatc
                     ord: r.get(3)?,
                     common: r.get(4)?,
                     best_kanji: r.get(5)?,
+                    nokanji: r.get::<_, Option<i64>>(6)?.map(|v| v != 0),
                     ..Default::default()
                 })))
             } else {
@@ -59,6 +60,7 @@ pub fn find_word(conn: &Connection, word: &str, root_only: bool) -> Vec<WordMatc
                     ord: r.get(3)?,
                     common: r.get(4)?,
                     best_kana: r.get(5)?,
+                    nokanji: r.get::<_, Option<i64>>(6)?.map(|v| v != 0),
                     ..Default::default()
                 })))
             }

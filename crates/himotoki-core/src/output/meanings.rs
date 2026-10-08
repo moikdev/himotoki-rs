@@ -1,7 +1,7 @@
 //! Sense/gloss lookups + reading helpers — port of `himotoki/output/meanings.py`.
 
 use std::collections::HashMap;
-use std::sync::{LazyLock, Mutex};
+use std::sync::{LazyLock, RwLock};
 
 use rusqlite::Connection;
 use serde_json::{json, Value};
@@ -80,15 +80,15 @@ pub fn get_matching_kana_for_kanji(conn: &Connection, seq: i64, kanji_text: &str
 
 const MEANINGS_CACHE_MAX: usize = 50000;
 
-static MEANINGS_CACHE: LazyLock<Mutex<HashMap<i64, (Vec<String>, Option<String>)>>> =
-    LazyLock::new(|| Mutex::new(HashMap::new()));
+static MEANINGS_CACHE: LazyLock<RwLock<HashMap<i64, (Vec<String>, Option<String>)>>> =
+    LazyLock::new(|| RwLock::new(HashMap::new()));
 
 fn get_cached_meanings(seq: i64) -> Option<(Vec<String>, Option<String>)> {
-    MEANINGS_CACHE.lock().unwrap().get(&seq).cloned()
+    MEANINGS_CACHE.read().unwrap().get(&seq).cloned()
 }
 
 fn cache_meanings(seq: i64, meanings: Vec<String>, pos: Option<String>) {
-    let mut m = MEANINGS_CACHE.lock().unwrap();
+    let mut m = MEANINGS_CACHE.write().unwrap();
     if m.len() >= MEANINGS_CACHE_MAX {
         // Drop arbitrary half (Python keeps insertion-ordered half).
         let keep: Vec<i64> = m.keys().copied().skip(m.len() / 2).collect();
@@ -104,7 +104,7 @@ fn cache_meanings(seq: i64, meanings: Vec<String>, pos: Option<String>) {
 }
 
 pub fn clear_meanings_cache() {
-    MEANINGS_CACHE.lock().unwrap().clear();
+    MEANINGS_CACHE.write().unwrap().clear();
 }
 
 // ============================================================================
@@ -174,7 +174,7 @@ pub fn collect_seqs_from_path(path: &[std::rc::Rc<PathNode>]) -> std::collection
     for node in path {
         match &**node {
             PathNode::List(l) => {
-                for s in &l.segments {
+                for s in l.segments.iter() {
                     collect_segment_seqs(s, &mut seqs);
                 }
             }

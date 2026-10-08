@@ -6,7 +6,7 @@
 
 use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
-use std::sync::Mutex;
+use std::sync::RwLock;
 
 use rusqlite::Connection;
 
@@ -44,15 +44,15 @@ struct SuffixState {
     initialized: bool,
 }
 
-static SUFFIX_STATE: Mutex<Option<SuffixState>> = Mutex::new(None);
+static SUFFIX_STATE: RwLock<Option<SuffixState>> = RwLock::new(None);
 
 fn with_state<R>(f: impl FnOnce(&SuffixState) -> R) -> Option<R> {
-    let guard = SUFFIX_STATE.lock().unwrap();
+    let guard = SUFFIX_STATE.read().unwrap();
     guard.as_ref().map(f)
 }
 
 fn with_state_mut<R>(f: impl FnOnce(&mut SuffixState) -> R) -> R {
-    let mut guard = SUFFIX_STATE.lock().unwrap();
+    let mut guard = SUFFIX_STATE.write().unwrap();
     f(guard.get_or_insert_with(SuffixState::default))
 }
 
@@ -337,7 +337,7 @@ pub fn init_suffixes(conn: &Connection, reset: bool) {
         return;
     }
     {
-        let mut guard = SUFFIX_STATE.lock().unwrap();
+        let mut guard = SUFFIX_STATE.write().unwrap();
         *guard = Some(SuffixState::default());
     }
 
