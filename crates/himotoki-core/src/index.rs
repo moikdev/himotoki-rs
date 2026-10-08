@@ -128,10 +128,13 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
         SEQ.fetch_add(1, Ordering::Relaxed)
     ));
     let tmp = PathBuf::from(tmp);
-    std::fs::write(&tmp, bytes)?;
-    std::fs::rename(&tmp, path).inspect_err(|_| {
-        let _ = std::fs::remove_file(&tmp);
-    })
+    // Remove the temp file if either the write or the rename fails, so failed
+    // attempts don't accumulate uniquely named leftovers.
+    std::fs::write(&tmp, bytes)
+        .and_then(|()| std::fs::rename(&tmp, path))
+        .inspect_err(|_| {
+            let _ = std::fs::remove_file(&tmp);
+        })
 }
 
 fn build_from_db(conn: &rusqlite::Connection) -> anyhow::Result<Vec<u8>> {
