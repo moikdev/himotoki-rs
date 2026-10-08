@@ -3,6 +3,7 @@
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 
+use anyhow::Context;
 use clap::{Parser, Subcommand};
 
 use himotoki_core::chars::romanize_word;
@@ -96,7 +97,12 @@ enum Cmd {
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     let db_path = cli.db.unwrap_or_else(db::default_db_path);
-    let conn = db::open(&db_path)?;
+    let conn = db::open(&db_path).with_context(|| {
+        format!(
+            "cannot open {} (pass -d, set HIMOTOKI_DB_PATH, or build one with himotoki-load; see README)",
+            db_path.display()
+        )
+    })?;
     init_suffixes(&conn, false);
     let _ = himotoki_core::grammar::counters::init_counter_cache(&conn);
     let index = if cli.no_index {
