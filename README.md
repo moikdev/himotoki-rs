@@ -46,11 +46,12 @@ Python allocates via `imap_unordered`); compare with
 `scripts/diff_gold.py --normalize-ids`.
 
 The database is looked up from `-d`, then `HIMOTOKI_DB_PATH`, then
-`~/.himotoki/himotoki.db`. It is opened read-only and immutable (no locking,
-works on read-only filesystems), so don't rebuild it in place while a
-process is using it. A word index (`himotoki.fst`) is built on first use
-(~5 s) and cached next to the database, or in the temp directory if that
-directory is read-only.
+`~/.himotoki/himotoki.db`. It is opened read-only and, unless a non-empty
+`-wal` file holds uncheckpointed changes, immutable (no locking, works on
+read-only filesystems), so don't rebuild it in place while a process is
+using it. A word index (`himotoki.fst`) is built on first use (~5 s) and
+cached next to the database, or in the temp directory (keyed by the
+database's path, size and mtime) if that directory is read-only.
 
 ## Usage
 

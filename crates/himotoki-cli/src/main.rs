@@ -247,6 +247,7 @@ fn main() -> anyhow::Result<()> {
 }
 
 /// Peak resident set size in MiB (getrusage: KiB on Linux, bytes on macOS).
+#[cfg(unix)]
 fn peak_rss_mb() -> f64 {
     let mut ru: libc::rusage = unsafe { std::mem::zeroed() };
     if unsafe { libc::getrusage(libc::RUSAGE_SELF, &mut ru) } != 0 {
@@ -258,6 +259,12 @@ fn peak_rss_mb() -> f64 {
     } else {
         raw / 1024.0
     }
+}
+
+/// Not measured on non-Unix platforms.
+#[cfg(not(unix))]
+fn peak_rss_mb() -> f64 {
+    0.0
 }
 
 /// `format_word_info_text` — like segment_to_text body on given word_infos.

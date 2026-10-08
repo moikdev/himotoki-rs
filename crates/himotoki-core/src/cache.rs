@@ -14,7 +14,7 @@
 //!   READINGS  — per-call ReadingsCache for output layer (word_info preload)
 
 use std::collections::{HashMap, HashSet};
-use std::sync::{OnceLock, RwLock};
+use std::sync::{Arc, RwLock};
 
 use rusqlite::Connection;
 
@@ -26,7 +26,29 @@ static UK_CACHE: RwLock<Option<HashMap<Vec<i64>, bool>>> = RwLock::new(None);
 static WORD_CACHE: RwLock<Option<HashMap<(String, String, bool), Vec<WordMatch>>>> =
     RwLock::new(None);
 static ENTRY_CACHE: RwLock<Option<HashMap<i64, EntryRow>>> = RwLock::new(None);
-static ARCHAIC_CACHE: OnceLock<HashSet<i64>> = OnceLock::new();
+static ARCHAIC_CACHE: DbSet = DbSet::new();
+
+/// A lazily built, database-derived set that `clear_scoring_caches` resets
+/// (a `OnceLock` would stay bound to the first database forever).
+struct DbSet(RwLock<Option<Arc<HashSet<i64>>>>);
+
+impl DbSet {
+    const fn new() -> Self {
+        DbSet(RwLock::new(None))
+    }
+
+    fn get_or_init(&self, build: impl FnOnce() -> HashSet<i64>) -> Arc<HashSet<i64>> {
+        if let Some(s) = self.0.read().unwrap().as_ref() {
+            return s.clone();
+        }
+        let built = Arc::new(build());
+        self.0.write().unwrap().get_or_insert(built).clone()
+    }
+
+    fn reset(&self) {
+        *self.0.write().unwrap() = None;
+    }
+}
 
 /// Entry cap for caches keyed by input-derived data (arbitrary substrings,
 /// seq combinations), which would otherwise grow without bound in a
@@ -42,9 +64,9 @@ pub(crate) fn bounded<K, V>(m: &mut HashMap<K, V>) -> &mut HashMap<K, V> {
 }
 /// sense ids tagged arch/obsc/rare — loaded once instead of re-materializing
 /// the `NOT IN (SELECT ...)` subquery on every POS lookup.
-static ARCH_SENSES: OnceLock<HashSet<i64>> = OnceLock::new();
+static ARCH_SENSES: DbSet = DbSet::new();
 
-fn arch_senses(conn: &Connection) -> &'static HashSet<i64> {
+fn arch_senses(conn: &Connection) -> Arc<HashSet<i64>> {
     ARCH_SENSES.get_or_init(|| {
         let mut out = HashSet::new();
         if let Ok(mut stmt) = conn.prepare(
@@ -64,6 +86,8 @@ pub fn clear_scoring_caches() {
     *UK_CACHE.write().unwrap() = None;
     *WORD_CACHE.write().unwrap() = None;
     *ENTRY_CACHE.write().unwrap() = None;
+    ARCHAIC_CACHE.reset();
+    ARCH_SENSES.reset();
     crate::conj::clear_conj_cache();
 }
 
@@ -466,6 +490,37 @@ pub struct GenScoreCache {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Same sense id, different archaic status in two databases: clearing
+    /// the scoring caches must drop the first database's classification.
+    #[test]
+    fn archaic_senses_reset_on_clear() {
+        let dir = std::env::temp_dir().join(format!("himotoki-arch-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mk = |name: &str, misc: &str| {
+            let p = dir.join(name);
+            let _ = std::fs::remove_file(&p);
+            let c = Connection::open(&p).unwrap();
+            c.execute_batch(&format!(
+                "CREATE TABLE sense_prop(seq INTEGER, sense_id INTEGER, tag TEXT, text TEXT);
+                 INSERT INTO sense_prop VALUES (100, 7, 'pos', 'n');
+                 INSERT INTO sense_prop VALUES (100, 7, 'misc', '{misc}');"
+            ))
+            .unwrap();
+            c
+        };
+        let a = mk("a.db", "arch");
+        let b = mk("b.db", "uk");
+        let seqs: HashSet<i64> = [100].into_iter().collect();
+        clear_scoring_caches();
+        assert!(get_non_arch_posi(&a, &seqs).is_empty());
+        clear_scoring_caches();
+        assert_eq!(
+            get_non_arch_posi(&b, &seqs),
+            ["n".to_string()].into_iter().collect()
+        );
+        clear_scoring_caches();
+    }
 
     #[test]
     fn bounded_clears_at_capacity() {

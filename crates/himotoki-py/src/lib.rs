@@ -46,6 +46,9 @@ fn shared(db_path: Option<&str>) -> PyResult<&'static Shared> {
         .unwrap_or_else(db::default_db_path);
     let conn = db::open(&path)
         .map_err(|e| PyRuntimeError::new_err(format!("failed to open {}: {e}", path.display())))?;
+    // Per-thread connections reopen this path later, possibly after the
+    // process changed directory: pin it to an absolute, canonical path.
+    let path = std::fs::canonicalize(&path).unwrap_or(path);
     himotoki_core::warm_up(&conn);
     let index = Some(WordIndex::load_or_build(&path, &conn));
     Ok(SHARED.get_or_init(|| Shared { index, path }))

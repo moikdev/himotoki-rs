@@ -33,7 +33,8 @@ def normalize_ids(x):
             if k == "seq" and isinstance(v, int) and v >= GENERATED_SEQ_MIN:
                 out[k] = "<generated>"
             elif k == "conjugations" and isinstance(v, list):
-                out[k] = "<conj-ids>"
+                # Row ids differ per build; keep the list's length and shape.
+                out[k] = ["<conj-id>" if isinstance(c, int) else normalize_ids(c) for c in v]
             else:
                 out[k] = normalize_ids(v)
         return out

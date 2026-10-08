@@ -21,6 +21,16 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo test --workspace
 
+  windows:
+    name: Windows build + unit tests
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build -p himotoki-cli -p himotoki-load
+      - run: cargo test -p himotoki-core --lib
+
   msrv:
     name: MSRV (1.87)
     runs-on: ubuntu-latest

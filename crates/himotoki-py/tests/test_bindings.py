@@ -63,3 +63,24 @@ def test_missing_db_raises_catchable_error(tmp_path):
     )
     subprocess.run([sys.executable, "-c", code], check=True)
     assert not missing.exists()
+
+
+@needs_db
+def test_relative_db_path_survives_chdir(tmp_path):
+    # Worker threads open their own connections; a relative path must not be
+    # re-resolved against a later working directory.
+    import subprocess
+    import sys
+
+    db = os.path.abspath(DB)
+    code = (
+        "import os, threading, himotoki_rs\n"
+        f"os.chdir({os.path.dirname(db)!r})\n"
+        f"himotoki_rs.warm_up({os.path.basename(db)!r})\n"
+        f"os.chdir({str(tmp_path)!r})\n"
+        "out = []\n"
+        "t = threading.Thread(target=lambda: out.append(himotoki_rs.analyze('猫')))\n"
+        "t.start(); t.join()\n"
+        "assert out and out[0][0][0][0]['text'] == '猫', out\n"
+    )
+    subprocess.run([sys.executable, "-c", code], check=True)

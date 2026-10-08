@@ -37,30 +37,33 @@ pub fn default_db_path() -> PathBuf {
         .join("himotoki.db")
 }
 
-/// Open the dictionary read-only. `immutable=1` lets SQLite skip file
-/// locking entirely (the analyzer never writes; don't rebuild the file while
-/// a process has it open), it works on read-only files and filesystems, and
-/// a missing file is an error instead of silently creating an empty database.
+/// Open the dictionary read-only. A missing file is an error instead of
+/// silently creating an empty database, and read-only files/filesystems work.
+///
+/// Normally the file is opened `immutable=1`, so SQLite skips file locking
+/// entirely (the analyzer never writes; don't rebuild the file in place while
+/// a process has it open). If a non-empty `-wal` file holds committed but
+/// uncheckpointed changes, immutable mode would ignore them, so it falls back
+/// to an ordinary read-only open.
+///
+/// SQLite's global memory-status accounting (a process-wide mutex on every
+/// allocation) is disabled at build time via `.cargo/config.toml`.
 pub fn open(path: &std::path::Path) -> rusqlite::Result<Connection> {
     use rusqlite::OpenFlags;
-    // Memory-status accounting takes a process-global mutex on every SQLite
-    // malloc, serializing otherwise independent connections. Must run before
-    // SQLite initializes; later calls return SQLITE_MISUSE harmlessly.
-    static MEMSTATUS_OFF: std::sync::Once = std::sync::Once::new();
-    MEMSTATUS_OFF.call_once(|| unsafe {
-        rusqlite::ffi::sqlite3_config(
-            rusqlite::ffi::SQLITE_CONFIG_MEMSTATUS,
-            0 as std::os::raw::c_int,
-        );
-    });
     if !path.is_file() {
         return Err(rusqlite::Error::SqliteFailure(
             rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_CANTOPEN),
             Some(format!("database not found: {}", path.display())),
         ));
     }
+    let abs = std::path::absolute(path).map_err(|e| {
+        rusqlite::Error::SqliteFailure(
+            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_CANTOPEN),
+            Some(format!("cannot resolve {}: {e}", path.display())),
+        )
+    })?;
     let conn = Connection::open_with_flags(
-        immutable_uri(path),
+        sqlite_uri(&abs, !has_pending_wal(&abs)),
         OpenFlags::SQLITE_OPEN_READ_ONLY
             | OpenFlags::SQLITE_OPEN_URI
             | OpenFlags::SQLITE_OPEN_NO_MUTEX,
@@ -71,17 +74,26 @@ pub fn open(path: &std::path::Path) -> rusqlite::Result<Connection> {
     Ok(conn)
 }
 
-/// `file:` URI for `path` with `immutable=1`. Percent-encodes the characters
-/// SQLite's URI parser treats specially and uses forward slashes, adding the
-/// leading `/` SQLite expects before a Windows drive letter.
-fn immutable_uri(path: &std::path::Path) -> String {
+/// A non-empty `<db>-wal` may hold commits not yet in the main file.
+fn has_pending_wal(db: &std::path::Path) -> bool {
+    let mut wal = db.as_os_str().to_owned();
+    wal.push("-wal");
+    std::fs::metadata(wal).map(|m| m.len() > 0).unwrap_or(false)
+}
+
+/// `file:` URI for an absolute `path`. Always emits an empty authority
+/// (`file://` + `/path`), so paths starting with `//` are not misread as a
+/// host; percent-encodes the characters SQLite's URI parser treats specially;
+/// on Windows uses forward slashes and `file:///C:/...` for drive paths
+/// (UNC paths become `file:////server/share/...`).
+fn sqlite_uri(path: &std::path::Path, immutable: bool) -> String {
     let mut raw = path.to_string_lossy().into_owned();
-    let mut out = String::from("file:");
     if cfg!(windows) {
         raw = raw.replace('\\', "/");
-        if raw.as_bytes().get(1) == Some(&b':') {
-            out.push('/');
-        }
+    }
+    let mut out = String::from("file://");
+    if !raw.starts_with('/') {
+        out.push('/');
     }
     for c in raw.chars() {
         match c {
@@ -91,7 +103,9 @@ fn immutable_uri(path: &std::path::Path) -> String {
             _ => out.push(c),
         }
     }
-    out.push_str("?immutable=1");
+    if immutable {
+        out.push_str("?immutable=1");
+    }
     out
 }
 
@@ -161,12 +175,58 @@ mod tests {
         assert_eq!(n, 7);
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn double_slash_and_relative_paths() {
+        let d = scratch("paths");
+        let p = tiny_db(&d, "x.db");
+        let doubled = PathBuf::from(format!("/{}", p.display()));
+        assert!(open(&doubled).is_ok(), "{}", doubled.display());
+        let rel = pathdiff_from_cwd(&p);
+        assert!(open(&rel).is_ok(), "{}", rel.display());
+    }
+
+    #[cfg(unix)]
+    fn pathdiff_from_cwd(p: &std::path::Path) -> PathBuf {
+        let cwd = std::env::current_dir().unwrap();
+        let ups = cwd.components().count() - 1;
+        let mut rel = PathBuf::new();
+        for _ in 0..ups {
+            rel.push("..");
+        }
+        rel.join(p.strip_prefix("/").unwrap())
+    }
+
+    #[test]
+    fn sees_uncheckpointed_wal_commits() {
+        let d = scratch("wal");
+        let p = d.join("wal.db");
+        let _ = std::fs::remove_file(&p);
+        let w = Connection::open(&p).unwrap();
+        w.execute_batch(
+            "PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0;
+             CREATE TABLE entry(seq INTEGER); INSERT INTO entry VALUES (7);",
+        )
+        .unwrap();
+        // `w` stays open, so the commit lives only in wal.db-wal.
+        let c = open(&p).unwrap();
+        let n: i64 = c
+            .query_row("SELECT count(*) FROM entry", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(n, 1);
+        drop(w);
+    }
+
     #[cfg(windows)]
     #[test]
-    fn uri_handles_drive_letters() {
+    fn uri_handles_windows_paths() {
         assert_eq!(
-            immutable_uri(std::path::Path::new("C:\\x\\y.db")),
-            "file:/C:/x/y.db?immutable=1"
+            sqlite_uri(std::path::Path::new("C:\\x\\y.db"), true),
+            "file:///C:/x/y.db?immutable=1"
+        );
+        assert_eq!(
+            sqlite_uri(std::path::Path::new("\\\\srv\\share\\y.db"), false),
+            "file:////srv/share/y.db"
         );
     }
 }

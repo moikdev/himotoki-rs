@@ -1,0 +1,4 @@
+[env]
+# Bundled SQLite: turn off global memory-status accounting, whose process-wide
+# mutex serializes allocations across otherwise independent connections.
+LIBSQLITE3_FLAGS = "-DSQLITE_DEFAULT_MEMSTATUS=0"
