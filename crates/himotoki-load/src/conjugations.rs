@@ -3,7 +3,9 @@
 //! Generates conjugation entries/readings/props from conjo.csv rules over
 //! the JMdict-loaded tables. Python parallelizes generation (imap_unordered),
 //! so generated seq numbers are inherently nondeterministic there; this port
-//! processes seqs in sorted order — deterministic and content-equivalent.
+//! processes seqs in the same SQL result order as the Python loader, so
+//! conjugation row ids — which decide the order alternative conjugation
+//! sources are listed in — match a Python-built database.
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -739,34 +741,31 @@ pub fn load_conjugations(
 
     let mut reading_index = build_reading_to_seq_index(conn)?;
 
-    // seqs with conjugatable POS, minus exclusions — sorted for determinism
-    let pos_set: HashSet<&str> = POS_WITH_CONJ_RULES.iter().copied().collect();
-    let skip_set: HashSet<i64> = DO_NOT_CONJUGATE_SEQ.iter().copied().collect();
-    let mut seqs: Vec<i64> = {
-        let mut st = conn.prepare_cached("SELECT DISTINCT seq FROM sense_prop WHERE tag='pos'")?;
+    // seqs with conjugatable POS, minus exclusions. Conjugation row ids (and
+    // therefore the order readers list alternative sources in) follow this
+    // iteration order, so run the exact statement Python's loader issues and
+    // keep SQLite's result order (grouped by POS text via the tag/text index)
+    // instead of re-sorting by seq.
+    let seqs: Vec<i64> = {
+        let pos_list = POS_WITH_CONJ_RULES
+            .iter()
+            .map(|p| format!("'{p}'"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let skip_list = DO_NOT_CONJUGATE_SEQ
+            .iter()
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        let sql = format!(
+            "SELECT DISTINCT sense_prop.seq FROM sense_prop \
+             WHERE sense_prop.tag = 'pos' AND sense_prop.text IN ({pos_list}) \
+             AND (sense_prop.seq NOT IN ({skip_list}))"
+        );
+        let mut st = conn.prepare(&sql)?;
         let rows = st.query_map([], |r| r.get::<_, i64>(0))?;
-        let mut v = Vec::new();
-        for r in rows.flatten() {
-            if !skip_set.contains(&r) {
-                v.push(r);
-            }
-        }
-        v
+        rows.collect::<rusqlite::Result<_>>()?
     };
-    // Filter to seqs having at least one conjugatable pos
-    {
-        let seq_set: HashSet<i64> = seqs.iter().copied().collect();
-        let mut keep: HashSet<i64> = HashSet::new();
-        let mut st = conn.prepare_cached("SELECT seq, text FROM sense_prop WHERE tag='pos'")?;
-        for r in st.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))? {
-            let (seq, text) = r?;
-            if seq_set.contains(&seq) && pos_set.contains(text.as_str()) {
-                keep.insert(seq);
-            }
-        }
-        seqs.retain(|s| keep.contains(s));
-    }
-    seqs.sort_unstable();
 
     let total = seqs.len();
     let seq_set: HashSet<i64> = seqs.iter().copied().collect();
@@ -819,14 +818,15 @@ pub fn load_secondary_conjugations(
     // secondariable types, non vs-i/vs-s, via IS NULL, neg/fml unset-or-false
     let mut to_conj: Vec<(i64, i64, i64)> = Vec::new();
     {
-        let mut st = conn.prepare_cached(
-            "SELECT DISTINCT c.\"from\", c.seq, cp.conj_type \
-             FROM conjugation c JOIN conj_prop cp ON cp.conj_id = c.id \
-             WHERE cp.conj_type IN (5,6,7,8,14) \
-               AND cp.pos NOT IN ('vs-i','vs-s') \
-               AND c.via IS NULL \
-               AND (cp.neg IS NULL OR cp.neg = 0) \
-               AND (cp.fml IS NULL OR cp.fml = 0)",
+        // Same statement and result order as Python's loader (see primary pass).
+        let mut st = conn.prepare(
+            "SELECT DISTINCT conjugation.\"from\", conjugation.seq, conj_prop.conj_type \
+             FROM conjugation JOIN conj_prop ON conjugation.id = conj_prop.conj_id \
+             WHERE conj_prop.conj_type IN (5, 6, 7, 8, 14) \
+               AND (conj_prop.pos NOT IN ('vs-i', 'vs-s')) \
+               AND conjugation.via IS NULL \
+               AND (conj_prop.neg IS NULL OR conj_prop.neg = 0) \
+               AND (conj_prop.fml IS NULL OR conj_prop.fml = 0)",
         )?;
         for r in st.query_map([], |r| {
             Ok((
@@ -838,7 +838,6 @@ pub fn load_secondary_conjugations(
             to_conj.push(r?);
         }
     }
-    to_conj.sort_unstable();
     let total = to_conj.len();
 
     let via_seqs: HashSet<i64> = to_conj.iter().map(|(_, s, _)| *s).collect();
