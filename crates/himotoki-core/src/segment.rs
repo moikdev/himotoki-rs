@@ -577,14 +577,16 @@ pub fn find_best_path(
     let mut top = TopArray::new(limit);
     top.register(gap_penalty(0, text_length), Vec::new());
 
-    for seg_list in segment_lists.iter_mut() {
-        seg_list.top = Some(TopArray::new(limit));
-    }
-
+    // Per-list DP scratch kept outside SegmentList so list clones stay cheap.
     let n = segment_lists.len();
+    let mut tops: Vec<TopArray> = (0..n).map(|_| TopArray::new(limit)).collect();
+    let list_scores: Vec<f64> = segment_lists
+        .iter()
+        .map(|l| l.segments.iter().map(|s| s.score).fold(0.0, f64::max))
+        .collect();
+
     for i in 0..n {
-        let (before, after) = segment_lists.split_at_mut(i + 1);
-        let seg1 = &mut before[i];
+        let seg1 = &segment_lists[i];
 
         let gap_left = gap_penalty(0, seg1.start);
         let gap_right = gap_penalty(seg1.end, text_length);
@@ -592,56 +594,45 @@ pub fn find_best_path(
         for seg in get_initial_segments(seg1) {
             let node = Rc::new(PathNode::List(Rc::new(seg)));
             let score1 = get_segment_score(&node);
-            if let Some(t) = seg1.top.as_mut() {
-                t.register(gap_left + score1, vec![node.clone()]);
-            }
+            tops[i].register(gap_left + score1, vec![node.clone()]);
             top.register(gap_left + score1 + gap_right, vec![node]);
         }
 
-        for seg2 in after.iter_mut() {
-            let score2 = get_segment_score(&PathNode::List(Rc::new(seg2.clone())));
+        let (tops_before, tops_after) = tops.split_at_mut(i + 1);
+        let top1 = &tops_before[i];
+        for (k, seg2) in segment_lists[i + 1..].iter().enumerate() {
             if seg2.start < seg1.end {
                 continue;
             }
+            let score2 = list_scores[i + 1 + k];
             let gap_mid = gap_penalty(seg1.end, seg2.start);
             let gap_end = gap_penalty(seg2.end, text_length);
 
-            let items: Vec<TopArrayItem> = match seg1.top.as_ref() {
-                Some(t) => t.get_items().cloned().collect(),
-                None => Vec::new(),
-            };
-            for tai in items {
+            for tai in top1.get_items() {
                 if tai.payload.is_empty() {
                     continue;
                 }
-                let seg_left_node = tai.payload[0].clone();
-                let tail: Vec<Rc<PathNode>> = tai.payload.iter().skip(1).cloned().collect();
-                let score3 = get_segment_score(&seg_left_node);
+                let seg_left_node = &tai.payload[0];
+                let score3 = get_segment_score(seg_left_node);
                 let score_tail = tai.score - score3;
 
-                let seg_left_list = match &*seg_left_node {
-                    PathNode::List(l) => (**l).clone(),
+                let seg_left_list = match &**seg_left_node {
+                    PathNode::List(l) => l,
                     _ => continue,
                 };
-                let splits = get_segment_splits(&seg_left_list, seg2);
+                let splits = get_segment_splits(seg_left_list, seg2);
                 for split in splits {
                     let split_score: f64 = split.iter().map(|s| get_segment_score(s)).sum();
                     let accum =
                         gap_mid + split_score.max(score3 + 1.0).max(score2 + 1.0) + score_tail;
                     let mut new_path = split;
-                    new_path.extend(tail.iter().cloned());
+                    new_path.extend(tai.payload.iter().skip(1).cloned());
 
-                    if let Some(t) = seg2.top.as_mut() {
-                        t.register(accum, new_path.clone());
-                    }
+                    tops_after[k].register(accum, new_path.clone());
                     top.register(accum + gap_end, new_path);
                 }
             }
         }
-    }
-
-    for seg_list in segment_lists.iter_mut() {
-        seg_list.top = None;
     }
 
     top.get_items()

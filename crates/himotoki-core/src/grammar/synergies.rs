@@ -177,7 +177,7 @@ pub fn def_segfilter_must_follow(
     Arc::new(
         move |seg_left: Option<&SegmentList>, seg_right: &SegmentList| {
             let (mut satisfies_r, mut contradicts_r) = (Vec::new(), Vec::new());
-            for s in &seg_right.segments {
+            for s in seg_right.segments.iter() {
                 if filter_right(s) {
                     satisfies_r.push(s.clone());
                 } else {
@@ -209,7 +209,7 @@ pub fn def_segfilter_must_follow(
                 }
             };
             let (mut satisfies_l, mut contradicts_l) = (Vec::new(), Vec::new());
-            for s in &left.segments {
+            for s in left.segments.iter() {
                 if filter_left(s) {
                     satisfies_l.push(s.clone());
                 } else {

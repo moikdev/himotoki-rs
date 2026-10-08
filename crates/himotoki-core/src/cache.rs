@@ -1,7 +1,7 @@
 //! Scoring caches — port of `himotoki/scoring/caches.py`.
 //!
 //! Python uses LRUCache instances; eviction is purely a memory bound and never
-//! changes results, so plain `Mutex<HashMap>` statics are parity-equivalent.
+//! changes results, so plain `RwLock<HashMap>` statics are parity-equivalent.
 //!
 //! Caches (module-level):
 //!   CONJ_DATA — in conj.rs (co-located with get_conj_data)
@@ -13,26 +13,43 @@
 //!   READINGS  — per-call ReadingsCache for output layer (word_info preload)
 
 use std::collections::{HashMap, HashSet};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{OnceLock, RwLock};
 
 use rusqlite::Connection;
 
 use crate::db::rows::{EntryRow, KanaTextRow, KanjiTextRow};
 use crate::types::{Reading, WordMatch};
 
-static POS_SEQ_CACHE: Mutex<Option<HashMap<i64, HashSet<String>>>> = Mutex::new(None);
-static UK_CACHE: Mutex<Option<HashMap<Vec<i64>, bool>>> = Mutex::new(None);
-static WORD_CACHE: Mutex<Option<HashMap<(String, String, bool), Vec<WordMatch>>>> =
-    Mutex::new(None);
-static ENTRY_CACHE: Mutex<Option<HashMap<i64, EntryRow>>> = Mutex::new(None);
+static POS_SEQ_CACHE: RwLock<Option<HashMap<i64, HashSet<String>>>> = RwLock::new(None);
+static UK_CACHE: RwLock<Option<HashMap<Vec<i64>, bool>>> = RwLock::new(None);
+static WORD_CACHE: RwLock<Option<HashMap<(String, String, bool), Vec<WordMatch>>>> =
+    RwLock::new(None);
+static ENTRY_CACHE: RwLock<Option<HashMap<i64, EntryRow>>> = RwLock::new(None);
 static ARCHAIC_CACHE: OnceLock<HashSet<i64>> = OnceLock::new();
+/// sense ids tagged arch/obsc/rare — loaded once instead of re-materializing
+/// the `NOT IN (SELECT ...)` subquery on every POS lookup.
+static ARCH_SENSES: OnceLock<HashSet<i64>> = OnceLock::new();
+
+fn arch_senses(conn: &Connection) -> &'static HashSet<i64> {
+    ARCH_SENSES.get_or_init(|| {
+        let mut out = HashSet::new();
+        if let Ok(mut stmt) = conn.prepare(
+            "SELECT sense_id FROM sense_prop WHERE tag='misc' AND text IN ('arch','obsc','rare')",
+        ) {
+            if let Ok(rows) = stmt.query_map([], |r| r.get::<_, i64>(0)) {
+                out.extend(rows.flatten());
+            }
+        }
+        out
+    })
+}
 
 /// `clear_scoring_caches` — drop everything (DB switch).
 pub fn clear_scoring_caches() {
-    *POS_SEQ_CACHE.lock().unwrap() = None;
-    *UK_CACHE.lock().unwrap() = None;
-    *WORD_CACHE.lock().unwrap() = None;
-    *ENTRY_CACHE.lock().unwrap() = None;
+    *POS_SEQ_CACHE.write().unwrap() = None;
+    *UK_CACHE.write().unwrap() = None;
+    *WORD_CACHE.write().unwrap() = None;
+    *ENTRY_CACHE.write().unwrap() = None;
     crate::conj::clear_conj_cache();
 }
 
@@ -43,7 +60,7 @@ pub fn clear_scoring_caches() {
 /// `get_cached_entry` — EntryRow for seq or None.
 pub fn get_cached_entry(conn: &Connection, seq: i64) -> Option<EntryRow> {
     {
-        let guard = ENTRY_CACHE.lock().unwrap();
+        let guard = ENTRY_CACHE.read().unwrap();
         if let Some(e) = guard.as_ref().and_then(|m| m.get(&seq)) {
             return Some(e.clone());
         }
@@ -65,7 +82,7 @@ pub fn get_cached_entry(conn: &Connection, seq: i64) -> Option<EntryRow> {
         .ok();
     if let Some(e) = &entry {
         ENTRY_CACHE
-            .lock()
+            .write()
             .unwrap()
             .get_or_insert_with(HashMap::new)
             .insert(seq, e.clone());
@@ -80,7 +97,7 @@ pub fn preload_scoring_caches(conn: &Connection, seqs: &HashSet<i64>) {
     }
     // Entries
     let missing: Vec<i64> = {
-        let guard = ENTRY_CACHE.lock().unwrap();
+        let guard = ENTRY_CACHE.read().unwrap();
         let cached: HashSet<i64> = guard
             .as_ref()
             .map(|m| m.keys().copied().collect())
@@ -107,7 +124,7 @@ pub fn preload_scoring_caches(conn: &Connection, seqs: &HashSet<i64>) {
                     primary_nokanji: r.get::<_, i64>(4)? != 0,
                 })
             }) {
-                let mut guard = ENTRY_CACHE.lock().unwrap();
+                let mut guard = ENTRY_CACHE.write().unwrap();
                 let m = guard.get_or_insert_with(HashMap::new);
                 for r in rows.flatten() {
                     m.insert(r.seq, r);
@@ -118,7 +135,7 @@ pub fn preload_scoring_caches(conn: &Connection, seqs: &HashSet<i64>) {
 
     // UK: Python caches per-single-seq frozensets
     let uk_missing: Vec<i64> = {
-        let guard = UK_CACHE.lock().unwrap();
+        let guard = UK_CACHE.read().unwrap();
         seqs.iter()
             .copied()
             .filter(|s| {
@@ -147,7 +164,7 @@ pub fn preload_scoring_caches(conn: &Connection, seqs: &HashSet<i64>) {
                 }
             }
         }
-        let mut guard = UK_CACHE.lock().unwrap();
+        let mut guard = UK_CACHE.write().unwrap();
         let m = guard.get_or_insert_with(HashMap::new);
         for seq in &uk_missing {
             m.insert(vec![*seq], uk_seqs.contains(seq));
@@ -156,7 +173,7 @@ pub fn preload_scoring_caches(conn: &Connection, seqs: &HashSet<i64>) {
 
     // POS tags (excluding archaic senses)
     let pos_missing: Vec<i64> = {
-        let guard = POS_SEQ_CACHE.lock().unwrap();
+        let guard = POS_SEQ_CACHE.read().unwrap();
         seqs.iter()
             .copied()
             .filter(|s| !guard.as_ref().map(|m| m.contains_key(s)).unwrap_or(false))
@@ -169,8 +186,7 @@ pub fn preload_scoring_caches(conn: &Connection, seqs: &HashSet<i64>) {
             .collect::<Vec<_>>()
             .join(",");
         let sql = format!(
-            "SELECT seq, text FROM sense_prop WHERE seq IN ({}) AND tag='pos' \
-             AND sense_id NOT IN (SELECT sense_id FROM sense_prop WHERE tag='misc' AND text IN ('arch','obsc','rare'))",
+            "SELECT seq, text, sense_id FROM sense_prop WHERE seq IN ({}) AND tag='pos'",
             ph
         );
         let mut by_seq: HashMap<i64, HashSet<String>> = HashMap::new();
@@ -178,14 +194,17 @@ pub fn preload_scoring_caches(conn: &Connection, seqs: &HashSet<i64>) {
             let params: Vec<rusqlite::types::Value> =
                 pos_missing.iter().map(|i| (*i).into()).collect();
             if let Ok(rows) = stmt.query_map(rusqlite::params_from_iter(params), |r| {
-                Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))
+                Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?))
             }) {
+                let arch = arch_senses(conn);
                 for r in rows.flatten() {
-                    by_seq.entry(r.0).or_default().insert(r.1);
+                    if !arch.contains(&r.2) {
+                        by_seq.entry(r.0).or_default().insert(r.1);
+                    }
                 }
             }
         }
-        let mut guard = POS_SEQ_CACHE.lock().unwrap();
+        let mut guard = POS_SEQ_CACHE.write().unwrap();
         let m = guard.get_or_insert_with(HashMap::new);
         for seq in pos_missing {
             m.entry(seq)
@@ -243,7 +262,7 @@ pub fn is_prefer_kana(conn: &Connection, seq_set: &[i64]) -> bool {
     key.sort_unstable();
     key.dedup();
     {
-        let guard = UK_CACHE.lock().unwrap();
+        let guard = UK_CACHE.read().unwrap();
         if let Some(v) = guard.as_ref().and_then(|m| m.get(&key)) {
             return *v;
         }
@@ -262,7 +281,7 @@ pub fn is_prefer_kana(conn: &Connection, seq_set: &[i64]) -> bool {
         .and_then(|mut s| s.query_row(rusqlite::params_from_iter(params), |_| Ok(())))
         .is_ok();
     UK_CACHE
-        .lock()
+        .write()
         .unwrap()
         .get_or_insert_with(HashMap::new)
         .insert(key, result);
@@ -272,7 +291,7 @@ pub fn is_prefer_kana(conn: &Connection, seq_set: &[i64]) -> bool {
 /// `get_non_arch_posi` — union of per-seq posi sets, excluding archaic senses.
 pub fn get_non_arch_posi(conn: &Connection, seq_set: &HashSet<i64>) -> HashSet<String> {
     let missing: Vec<i64> = {
-        let guard = POS_SEQ_CACHE.lock().unwrap();
+        let guard = POS_SEQ_CACHE.read().unwrap();
         seq_set
             .iter()
             .copied()
@@ -282,8 +301,7 @@ pub fn get_non_arch_posi(conn: &Connection, seq_set: &HashSet<i64>) -> HashSet<S
     if !missing.is_empty() {
         let ph = missing.iter().map(|_| "?").collect::<Vec<_>>().join(",");
         let sql = format!(
-            "SELECT seq, text FROM sense_prop WHERE seq IN ({}) AND tag='pos' \
-             AND sense_id NOT IN (SELECT sense_id FROM sense_prop WHERE tag='misc' AND text IN ('arch','obsc','rare'))",
+            "SELECT seq, text, sense_id FROM sense_prop WHERE seq IN ({}) AND tag='pos'",
             ph
         );
         let mut by_seq: HashMap<i64, HashSet<String>> =
@@ -291,20 +309,23 @@ pub fn get_non_arch_posi(conn: &Connection, seq_set: &HashSet<i64>) -> HashSet<S
         if let Ok(mut stmt) = conn.prepare_cached(&sql) {
             let params: Vec<rusqlite::types::Value> = missing.iter().map(|i| (*i).into()).collect();
             if let Ok(rows) = stmt.query_map(rusqlite::params_from_iter(params), |r| {
-                Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))
+                Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?))
             }) {
+                let arch = arch_senses(conn);
                 for r in rows.flatten() {
-                    by_seq.entry(r.0).or_default().insert(r.1);
+                    if !arch.contains(&r.2) {
+                        by_seq.entry(r.0).or_default().insert(r.1);
+                    }
                 }
             }
         }
-        let mut guard = POS_SEQ_CACHE.lock().unwrap();
+        let mut guard = POS_SEQ_CACHE.write().unwrap();
         let m = guard.get_or_insert_with(HashMap::new);
         for (seq, posi) in by_seq {
             m.insert(seq, posi);
         }
     }
-    let guard = POS_SEQ_CACHE.lock().unwrap();
+    let guard = POS_SEQ_CACHE.read().unwrap();
     let mut result = HashSet::new();
     if let Some(m) = guard.as_ref() {
         for seq in seq_set {
@@ -321,7 +342,7 @@ pub fn get_non_arch_posi(conn: &Connection, seq_set: &HashSet<i64>) -> HashSet<S
 // ============================================================================
 
 pub fn word_cache_get(db_id: &str, word: &str, root_only: bool) -> Option<Vec<WordMatch>> {
-    let guard = WORD_CACHE.lock().unwrap();
+    let guard = WORD_CACHE.read().unwrap();
     guard
         .as_ref()?
         .get(&(db_id.to_string(), word.to_string(), root_only))
@@ -330,7 +351,7 @@ pub fn word_cache_get(db_id: &str, word: &str, root_only: bool) -> Option<Vec<Wo
 
 pub fn word_cache_put(db_id: &str, word: &str, root_only: bool, matches: Vec<WordMatch>) {
     WORD_CACHE
-        .lock()
+        .write()
         .unwrap()
         .get_or_insert_with(HashMap::new)
         .insert((db_id.to_string(), word.to_string(), root_only), matches);

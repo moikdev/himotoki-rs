@@ -14,6 +14,9 @@ use himotoki_core::output::format::{segment_to_json, simple_segment};
 use himotoki_core::output::golden;
 use himotoki_core::segment::segment_text;
 
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[derive(Parser)]

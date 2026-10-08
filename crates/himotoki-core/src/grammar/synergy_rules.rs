@@ -463,18 +463,20 @@ fn init_synergies(r: &mut super::synergies::Registries) {
     }
 
     // し (particle) + ただ
-    r.synergies
-        .push(Arc::new(|l: &SegmentList, rr: &SegmentList| {
+    {
+        let (fl, fr) = (filter_in_seq_set(&[2086640]), filter_in_seq_set(&[1538900]));
+        r.synergies.push(Arc::new(move |l: &SegmentList, rr: &SegmentList| {
             make_syn(
                 l,
                 rr,
-                filter_in_seq_set(&[2086640]),
-                filter_in_seq_set(&[1538900]),
+                fl.clone(),
+                fr.clone(),
                 "shi+tada",
                 " ",
                 10.0,
             )
         }));
+    }
 
     // verb + よ (unconjugated only)
     {
@@ -503,57 +505,64 @@ fn init_synergies(r: &mut super::synergies::Registries) {
     }
 
     // 前(まえ) + に
-    r.synergies
-        .push(Arc::new(|l: &SegmentList, rr: &SegmentList| {
+    {
+        let (fl, fr) = (filter_in_seq_set(&[SEQ_MAE_NOUN]), filter_in_seq_set(&[SEQ_NI]));
+        r.synergies.push(Arc::new(move |l: &SegmentList, rr: &SegmentList| {
             make_syn(
                 l,
                 rr,
-                filter_in_seq_set(&[SEQ_MAE_NOUN]),
-                filter_in_seq_set(&[SEQ_NI]),
+                fl.clone(),
+                fr.clone(),
                 "mae+ni",
                 " ",
                 25.0,
             )
         }));
+    }
 
     // の + 方(ほう)
-    r.synergies
-        .push(Arc::new(|l: &SegmentList, rr: &SegmentList| {
+    {
+        let (fl, fr) = (filter_in_seq_set(&[SEQ_NO]), filter_in_seq_set(&[SEQ_HOU_NOUN]));
+        r.synergies.push(Arc::new(move |l: &SegmentList, rr: &SegmentList| {
             make_syn(
                 l,
                 rr,
-                filter_in_seq_set(&[SEQ_NO]),
-                filter_in_seq_set(&[SEQ_HOU_NOUN]),
+                fl.clone(),
+                fr.clone(),
                 "no+hou",
                 " ",
                 25.0,
             )
         }));
+    }
 
     // noun + 面(めん)
-    r.synergies
-        .push(Arc::new(|l: &SegmentList, rr: &SegmentList| {
+    {
+        let (fl, fr) = (filter_is_noun(), filter_in_seq_set(&[SEQ_MEN_NOUN]));
+        r.synergies.push(Arc::new(move |l: &SegmentList, rr: &SegmentList| {
             make_syn(
                 l,
                 rr,
-                filter_is_noun(),
-                filter_in_seq_set(&[SEQ_MEN_NOUN]),
+                fl.clone(),
+                fr.clone(),
                 "noun+men",
                 " ",
                 25.0,
             )
         }));
+    }
 
     // verb/adj + 人(ひと)
     {
         let f_verb = Arc::new(|s: &Segment| has_pos(s, VERB_POS_WIDE)) as SegFilter;
+        let f_noun_seq_hito_noun = filter_in_seq_set(&[SEQ_HITO_NOUN]);
         r.synergies
             .push(Arc::new(move |l: &SegmentList, rr: &SegmentList| {
                 make_syn(
                     l,
                     rr,
                     f_verb.clone(),
-                    filter_in_seq_set(&[SEQ_HITO_NOUN]),
+                    f_noun_seq_hito_noun.clone(),
                     "verb+hito",
                     " ",
                     25.0,
@@ -562,18 +571,20 @@ fn init_synergies(r: &mut super::synergies::Registries) {
     }
 
     // 人(ひと) + の
-    r.synergies
-        .push(Arc::new(|l: &SegmentList, rr: &SegmentList| {
+    {
+        let (fl, fr) = (filter_in_seq_set(&[SEQ_HITO_NOUN]), filter_in_seq_set(&[SEQ_NO]));
+        r.synergies.push(Arc::new(move |l: &SegmentList, rr: &SegmentList| {
             make_syn(
                 l,
                 rr,
-                filter_in_seq_set(&[SEQ_HITO_NOUN]),
-                filter_in_seq_set(&[SEQ_NO]),
+                fl.clone(),
+                fr.clone(),
                 "hito+no",
                 " ",
                 30.0,
             )
         }));
+    }
 
     // verb + 中(なか)
     {
@@ -582,13 +593,14 @@ fn init_synergies(r: &mut super::synergies::Registries) {
             "v5r-i", "vk", "vs", "vs-i",
         ];
         let f_verb = Arc::new(|s: &Segment| has_pos(s, VERB_POS_NAKA)) as SegFilter;
+        let f_noun_seq_naka_noun = filter_in_seq_set(&[SEQ_NAKA_NOUN]);
         r.synergies
             .push(Arc::new(move |l: &SegmentList, rr: &SegmentList| {
                 make_syn(
                     l,
                     rr,
                     f_verb.clone(),
-                    filter_in_seq_set(&[SEQ_NAKA_NOUN]),
+                    f_noun_seq_naka_noun.clone(),
                     "verb+naka",
                     " ",
                     25.0,
@@ -597,32 +609,36 @@ fn init_synergies(r: &mut super::synergies::Registries) {
     }
 
     // が + 止まる(とまる)
-    r.synergies
-        .push(Arc::new(|l: &SegmentList, rr: &SegmentList| {
+    {
+        let (fl, fr) = (filter_in_seq_set(&[SEQ_GA]), filter_in_seq_set(&[SEQ_TOMARU]));
+        r.synergies.push(Arc::new(move |l: &SegmentList, rr: &SegmentList| {
             make_syn(
                 l,
                 rr,
-                filter_in_seq_set(&[SEQ_GA]),
-                filter_in_seq_set(&[SEQ_TOMARU]),
+                fl.clone(),
+                fr.clone(),
                 "ga+tomaru",
                 " ",
                 25.0,
             )
         }));
+    }
 
     // は + 辛い(つらい)
-    r.synergies
-        .push(Arc::new(|l: &SegmentList, rr: &SegmentList| {
+    {
+        let (fl, fr) = (filter_in_seq_set(&[SEQ_WA]), filter_in_seq_set(&[SEQ_TSURAI]));
+        r.synergies.push(Arc::new(move |l: &SegmentList, rr: &SegmentList| {
             make_syn(
                 l,
                 rr,
-                filter_in_seq_set(&[SEQ_WA]),
-                filter_in_seq_set(&[SEQ_TSURAI]),
+                fl.clone(),
+                fr.clone(),
                 "wa+tsurai",
                 " ",
                 50.0,
             )
         }));
+    }
 }
 
 // ============================================================================
@@ -710,7 +726,7 @@ fn init_penalties(r: &mut super::synergies::Registries) {
             if !has_hitotachi {
                 return None;
             }
-            for seg in &left.segments {
+            for seg in left.segments.iter() {
                 let text = seg.word.text();
                 if text.chars().count() == 1 && crate::chars::is_kanji(text) {
                     return Some(Synergy {
@@ -767,7 +783,7 @@ fn init_penalties(r: &mut super::synergies::Registries) {
                 "v1", "v5r", "v5s", "v5k", "v5g", "v5b", "v5m", "v5n", "v5t", "v5u", "vk", "vs",
                 "vs-i", "n",
             ];
-            for seg in &left.segments {
+            for seg in left.segments.iter() {
                 if has_pos(seg, VERB_POS_TAN) {
                     return Some(Synergy {
                         description: "verb-stem+tan-penalty".to_string(),
@@ -792,14 +808,14 @@ fn init_penalties(r: &mut super::synergies::Registries) {
     ));
 
     // semi-final particle not at end
+    let f = filter_in_seq_set(
+        &crate::score::SEMI_FINAL_PRT
+            .iter()
+            .copied()
+            .collect::<Vec<_>>(),
+    );
     r.penalties
-        .push(Arc::new(|left: &SegmentList, right: &SegmentList| {
-            let f = filter_in_seq_set(
-                &crate::score::SEMI_FINAL_PRT
-                    .iter()
-                    .copied()
-                    .collect::<Vec<_>>(),
-            );
+        .push(Arc::new(move |left: &SegmentList, right: &SegmentList| {
             if !left.segments.iter().any(|s| f(s)) {
                 return None;
             }
@@ -876,9 +892,9 @@ fn init_segfilters(r: &mut super::synergies::Registries) {
     ));
 
     // だ + する (dashi) — custom
+    let f_right = filter_in_seq_set(&[1157170, 2424740, 1305070]);
     r.segfilters.push(
-        Arc::new(|seg_left: Option<&SegmentList>, seg_right: &SegmentList| {
-            let f_right = filter_in_seq_set(&[1157170, 2424740, 1305070]);
+        Arc::new(move |seg_left: Option<&SegmentList>, seg_right: &SegmentList| {
             let satisfies_r: Vec<Rc<Segment>> = seg_right
                 .segments
                 .iter()
@@ -924,18 +940,17 @@ fn init_segfilters(r: &mut super::synergies::Registries) {
     }
 
     // くん before a particle → pronoun reading, remove くん
+    let f_part = filter_in_seq_set(&NOUN_PARTICLES.iter().copied().collect::<Vec<i64>>());
+    let f_kun = filter_in_seq_set(&[SEQ_KUN]);
     r.segfilters.push(
-        Arc::new(|seg_left: Option<&SegmentList>, seg_right: &SegmentList| {
+        Arc::new(move |seg_left: Option<&SegmentList>, seg_right: &SegmentList| {
             let left = match seg_left {
                 Some(l) if l.end == seg_right.start => l,
                 _ => return vec![(seg_left.cloned(), seg_right.clone())],
             };
-            let np: Vec<i64> = NOUN_PARTICLES.iter().copied().collect();
-            let f_part = filter_in_seq_set(&np);
             if !seg_right.segments.iter().any(|s| f_part(s)) {
                 return vec![(Some(left.clone()), seg_right.clone())];
             }
-            let f_kun = filter_in_seq_set(&[SEQ_KUN]);
             let left_wo: Vec<Rc<Segment>> = left
                 .segments
                 .iter()
@@ -994,17 +1009,17 @@ fn init_segfilters(r: &mut super::synergies::Registries) {
     }
 
     // Remove いくさ reading of 戦 after nouns
+    let f_noun = filter_is_noun();
+    let f_ikusa = filter_in_seq_set(&[SEQ_IKUSA_NOUN]);
     r.segfilters.push(
-        Arc::new(|seg_left: Option<&SegmentList>, seg_right: &SegmentList| {
+        Arc::new(move |seg_left: Option<&SegmentList>, seg_right: &SegmentList| {
             let left = match seg_left {
                 Some(l) if l.end == seg_right.start => l,
                 _ => return vec![(seg_left.cloned(), seg_right.clone())],
             };
-            let f_noun = filter_is_noun();
             if !left.segments.iter().any(|s| f_noun(s)) {
                 return vec![(Some(left.clone()), seg_right.clone())];
             }
-            let f_ikusa = filter_in_seq_set(&[SEQ_IKUSA_NOUN]);
             let right_wo: Vec<Rc<Segment>> = seg_right
                 .segments
                 .iter()
