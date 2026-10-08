@@ -167,7 +167,13 @@ mod tests {
     #[test]
     fn uri_escapes_special_characters() {
         let d = scratch("uri");
-        let p = tiny_db(&d, "a?b#c%d.db");
+        // `?` is not a legal file-name character on Windows.
+        let name = if cfg!(windows) {
+            "a#b%c.db"
+        } else {
+            "a?b#c%d.db"
+        };
+        let p = tiny_db(&d, name);
         let c = open(&p).unwrap();
         let n: i64 = c
             .query_row("SELECT seq FROM entry", [], |r| r.get(0))
